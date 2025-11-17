@@ -9,6 +9,7 @@ from chatchat.webui_pages.dialogue.dialogue import  dialogue_page
 from chatchat.webui_pages.kb_chat import kb_chat
 from chatchat.webui_pages.mcp import mcp_management_page
 from chatchat.webui_pages.knowledge_base.knowledge_base import knowledge_base_page
+from chatchat.webui_pages.mdt_teaching import mdt_teaching_page
 from chatchat.webui_pages.utils import *
 
 api = ApiRequest(base_url=api_address())
@@ -60,6 +61,7 @@ if __name__ == "__main__":
                 sac.MenuItem("RAG 对话", icon="database"),
                 sac.MenuItem("知识库管理", icon="hdd-stack"),
                 sac.MenuItem("MCP 管理", icon="hdd-stack"),
+                sac.MenuItem("MDT教学平台", icon="hospital"),
             ],
             key="selected_page",
             open_index=0,
@@ -73,5 +75,7 @@ if __name__ == "__main__":
         kb_chat(api=api)
     elif selected_page == "MCP 管理":
         mcp_management_page(api=api)
+    elif selected_page == "MDT教学平台":
+        mdt_teaching_page(api=api)
     else:
         dialogue_page(api=api, is_lite=is_lite)

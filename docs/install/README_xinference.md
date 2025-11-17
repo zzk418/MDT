@@ -19,6 +19,7 @@ $ conda create -p ~/miniconda3/envs/chatchat python=3.8
 $ conda activate ~/miniconda3/envs/chatchat
 $ pip install langchain-chatchat -U
 $ pip install xinference_client faiss-gpu  "unstructured[pdf]"
+uv pip install xinference_client faiss-cpu  "unstructured[pdf]"
 ```
 
 - 创建xinference环境
