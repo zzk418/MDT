@@ -11,6 +11,7 @@ config/
 .vscode/
 Ai课程建设.docx
 
+
 # below are standard python ignore files
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -182,3 +183,4 @@ test.py
 /knowledge_base/samples/content/202311-D平台项目工作大纲参数，人员中间库表结构说明V1.1(1).docx
 /knowledge_base/samples/content/imi_temeplate.txt
 chatchat/data
+.~Ai课程建设.docx
