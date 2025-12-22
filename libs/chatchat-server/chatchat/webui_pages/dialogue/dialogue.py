@@ -202,28 +202,28 @@ def dialogue_page(
     with st.sidebar:
         tab1, tab2 = st.tabs(["工具设置", "会话设置"])
 
-        with tab1:
-            use_agent = st.checkbox(
-                "启用Agent", help="请确保选择的模型具备Agent能力", key="use_agent"
-            )
+    with tab1:
+        use_agent = st.checkbox(
+            "启用Agent", help="请确保选择的模型具备Agent能力", key="use_agent"
+        )
 
-            # 选择工具
-            tools = list_tools(api)
-            tool_names = ["None"] + list(tools)
-            if use_agent:
-                use_mcp = st.checkbox("使用MCP", key="use_mcp")
-                # selected_tools = sac.checkbox(list(tools), format_func=lambda x: tools[x]["title"], label="选择工具",
-                # check_all=True, key="selected_tools")
-                selected_tools = st.multiselect(
-                    "选择工具",
-                    list(tools),
-                    format_func=lambda x: tools[x]["title"],
-                    key="selected_tools",
-                )
-            else:
-                # selected_tool = sac.buttons(list(tools), format_func=lambda x: tools[x]["title"], label="选择工具",
-             
-                selected_tools = []
+        # 选择工具
+        tools = list_tools(api)
+        tool_names = ["None"] + list(tools)
+        use_mcp = False  # 初始化 use_mcp 变量
+        if use_agent:
+            use_mcp = st.checkbox("使用MCP", key="use_mcp")
+            # selected_tools = sac.checkbox(list(tools), format_func=lambda x: tools[x]["title"], label="选择工具",
+            # check_all=True, key="selected_tools")
+            selected_tools = st.multiselect(
+                "选择工具",
+                list(tools),
+                format_func=lambda x: tools[x]["title"],
+                key="selected_tools",
+            )
+        else:
+            # selected_tool = sac.buttons(list(tools), format_func=lambda x: tools[x]["title"], label="选择工具",
+            selected_tools = []
             selected_tool_configs = {
                 name: tool["config"]
                 for name, tool in tools.items()
