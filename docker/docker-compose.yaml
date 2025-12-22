@@ -1,18 +1,11 @@
-version: '3.9'
+version: '3.11'
 services:
-  xinference:
-    image: xprobe/xinference:v0.12.3
+  ollama:
+    image: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/ollama/ollama:latest
     restart: always
-    command: xinference-local -H 0.0.0.0
-    # ports: # 不使用 host network 时可打开.
-    #  - "9997:9997"
     network_mode: "host"
-    # 将本地路径(~/xinference)挂载到容器路径(/root/.xinference)中,
-    # 详情见: https://inference.readthedocs.io/zh-cn/latest/getting_started/using_docker_image.html
     volumes:
-      - ~/xinference:/root/.xinference
-      # - ~/xinference/cache/huggingface:/root/.cache/huggingface
-      # - ~/xinference/cache/modelscope:/root/.cache/modelscope
+      - ~/.ollama:/root/.ollama
     deploy:
       resources:
         reservations:
@@ -21,17 +14,22 @@ services:
               count: all
               capabilities: [gpu]
     runtime: nvidia
-    # 模型源更改为 ModelScope, 默认为 HuggingFace
-    # environment:
-    #   - XINFERENCE_MODEL_SRC=modelscope
+  
   chatchat:
-    image: chatimage/chatchat:0.3.1.3-93e2c87-20240829
-    # image: ccr.ccs.tencentyun.com/chatchat/chatchat:0.3.1.2-2024-0720
+    build:
+      context: ../
+      dockerfile: docker/Dockerfile
     restart: always
-    # ports: # 不使用 host network 时可打开.
-    #   - "7861:7861"
-    #   - "8501:8501"
     network_mode: "host"
-    # 将本地路径(~/chatchat)挂载到容器默认数据路径($CHATCHAT_ROOT)中
+    depends_on:
+      - ollama
+    environment:
+      - NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN}
+      - OLLAMA_MODELS=${OLLAMA_MODELS}
     # volumes:
-    #   - /root/chatchat:/root/chatchat_data
+    #   - ../data:/root/MDT/mdt_data
+    #   - ../libs/chatchat-server:/root/MDT/libs/chatchat-server
+    ports:
+      - "7861:7861"
+      - "8501:8501"  # WebUI端口
+      - "4040:4040"  # ngrok web界面

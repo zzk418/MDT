@@ -11361,7 +11361,7 @@ I14
 sVrazaprava
 p3927
 I64
-sVöymenom
+sVï¿½ymenom
 p3928
 I8
 sVustvarjalnih
@@ -23751,7 +23751,7 @@ sVthere
 p8050
 I4
 sVzrnje
-p8051
+p8501
 I32
 sVobzirom
 p8052
@@ -38831,7 +38831,7 @@ I32
 sVindijo
 p13075
 I4
-sVübeleis
+sVï¿½beleis
 p13076
 I4
 sV\u017eaklja
@@ -53775,7 +53775,7 @@ sVcankarja
 p18050
 I4
 sVreakcionarji
-p18051
+p18501
 I32
 sVneizogibne
 p18052
@@ -59130,7 +59130,7 @@ I4
 sV\u017eeleznicami
 p19832
 I32
-sVgöncz
+sVgï¿½ncz
 p19833
 I8
 sVzavodovem
@@ -68908,7 +68908,7 @@ I34
 sVprostorskih
 p23088
 I32
-sVmöderndorferja
+sVmï¿½derndorferja
 p23089
 I4
 sVpla\u0161\u010dem
@@ -71747,7 +71747,7 @@ I96
 sVrazpravljalci
 p24033
 I32
-sVlööf
+sVlï¿½ï¿½f
 p24034
 I8
 sVsvojo
@@ -83813,7 +83813,7 @@ sVpogledate
 p28050
 I32
 sVministrico
-p28051
+p28501
 I32
 sV\u0161ampionskih
 p28052
@@ -85919,7 +85919,7 @@ I32
 sVelite
 p28751
 I32
-sVmünchnu
+sVmï¿½nchnu
 p28752
 I4
 sVhavel
@@ -103172,7 +103172,7 @@ I32
 sVoddelka
 p34496
 I32
-sVcharéttom
+sVcharï¿½ttom
 p34497
 I4
 sVoddelke
