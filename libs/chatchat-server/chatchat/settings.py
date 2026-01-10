@@ -171,7 +171,7 @@ class KBSettings(BaseFileSettings):
     这样可以避免 PDF 中一些小图片的干扰，提高非扫描版 PDF 处理速度
     """
 
-    KB_INFO: t.Dict[str, str] = {"samples": "关于本项目issue的解答"} # TODO: 都存在数据库了，这个配置项还有必要吗？
+    KB_INFO: t.Dict[str, str] = {"samples": "泌尿外科肿瘤MDT多学科诊疗知识库"} # TODO: 都存在数据库了，这个配置项还有必要吗？
     """每个知识库的初始化介绍，用于在初始化知识库时显示和Agent调用，没写则没有介绍，不会被Agent调用。"""
 
     kbs_config: t.Dict[str, t.Dict] = {
@@ -306,10 +306,10 @@ class ApiModelSettings(BaseFileSettings):
 
     model_config = SettingsConfigDict(yaml_file=CHATCHAT_ROOT / "model_settings.yaml")
 
-    DEFAULT_LLM_MODEL: str = "glm4-chat"
+    DEFAULT_LLM_MODEL: str = "qwen3:4b-instruct-2507-q8_0"
     """默认选用的 LLM 名称"""
 
-    DEFAULT_EMBEDDING_MODEL: str = "bge-m3"
+    DEFAULT_EMBEDDING_MODEL: str = "nomic-embed-text:latest"
     """默认选用的 Embedding 名称"""
 
     Agent_MODEL: str = "" # TODO: 似乎与 LLM_MODEL_CONFIG 重复了
@@ -406,6 +406,7 @@ class ApiModelSettings(BaseFileSettings):
                     "qwen2:7b",
                 ],
                 "embed_models": [
+                    "nomic-embed-text:latest",
                     "quentinz/bge-large-zh-v1.5",
                 ],
             }),

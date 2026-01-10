@@ -2,10 +2,10 @@
 
 
 # 默认选用的 LLM 名称
-DEFAULT_LLM_MODEL: glm4-chat
+DEFAULT_LLM_MODEL: qwen3:4b-instruct-2507-q8_0
 
 # 默认选用的 Embedding 名称
-DEFAULT_EMBEDDING_MODEL: bge-m3
+DEFAULT_EMBEDDING_MODEL: nomic-embed-text:latest
 
 # AgentLM模型的名称 (可以不指定，指定之后就锁定进入Agent之后的Chain的模型，不指定就是 DEFAULT_LLM_MODEL)
 Agent_MODEL: ''
@@ -110,20 +110,6 @@ LLM_MODEL_CONFIG:
 # # 该平台支持的 TTS 模型列表，auto_detect_model 设为 True 时自动检测
 # text2speech_models: []
 MODEL_PLATFORMS:
-  - platform_name: xinference
-    platform_type: xinference
-    api_base_url: http://127.0.0.1:9997/v1
-    api_key: EMPTY
-    api_proxy: ''
-    api_concurrencies: 5
-    auto_detect_model: true
-    llm_models: []
-    embed_models: []
-    text2image_models: []
-    image2text_models: []
-    rerank_models: []
-    speech2text_models: []
-    text2speech_models: []
   - platform_name: ollama
     platform_type: ollama
     api_base_url: http://127.0.0.1:11434/v1
@@ -132,56 +118,12 @@ MODEL_PLATFORMS:
     api_concurrencies: 5
     auto_detect_model: false
     llm_models:
+      - qwen3:4b-instruct-2507-q8_0
       - qwen:7b
       - qwen2:7b
     embed_models:
+      - nomic-embed-text:latest
       - quentinz/bge-large-zh-v1.5
-    text2image_models: []
-    image2text_models: []
-    rerank_models: []
-    speech2text_models: []
-    text2speech_models: []
-  - platform_name: oneapi
-    platform_type: oneapi
-    api_base_url: http://127.0.0.1:3000/v1
-    api_key: sk-
-    api_proxy: ''
-    api_concurrencies: 5
-    auto_detect_model: false
-    llm_models:
-      - chatglm_pro
-      - chatglm_turbo
-      - chatglm_std
-      - chatglm_lite
-      - qwen-turbo
-      - qwen-plus
-      - qwen-max
-      - qwen-max-longcontext
-      - ERNIE-Bot
-      - ERNIE-Bot-turbo
-      - ERNIE-Bot-4
-      - SparkDesk
-    embed_models:
-      - text-embedding-v1
-      - Embedding-V1
-    text2image_models: []
-    image2text_models: []
-    rerank_models: []
-    speech2text_models: []
-    text2speech_models: []
-  - platform_name: openai
-    platform_type: openai
-    api_base_url: https://api.openai.com/v1
-    api_key: sk-proj-
-    api_proxy: ''
-    api_concurrencies: 5
-    auto_detect_model: false
-    llm_models:
-      - gpt-4o
-      - gpt-3.5-turbo
-    embed_models:
-      - text-embedding-3-small
-      - text-embedding-3-large
     text2image_models: []
     image2text_models: []
     rerank_models: []

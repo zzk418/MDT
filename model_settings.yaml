@@ -17,7 +17,7 @@ HISTORY_LEN: 3
 MAX_TOKENS:
 
 # LLM通用对话参数
-TEMPERATURE: 0.1
+TEMPERATURE: 0.7
 
 # 支持的Agent模型
 SUPPORT_AGENT_MODELS:
@@ -87,8 +87,8 @@ LLM_MODEL_CONFIG:
 # # 该平台单模型最大并发数
 # api_concurrencies: 5
 
-# # 是否自动获取平台可用模型列表。设为 True 时下方不同模型类型可自动检测
-# auto_detect_model: false
+# 是否自动获取平台可用模型列表。设为 True 时下方不同模型类型可自动检测
+auto_detect_model: true
 
 # # 该平台支持的大语言模型列表，auto_detect_model 设为 True 时自动检测
 # llm_models: []

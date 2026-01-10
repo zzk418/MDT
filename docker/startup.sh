@@ -90,10 +90,15 @@ else
     echo "未找到OLLAMA_MODELS环境变量，跳过模型拉取"
 fi
 
-# 初始化ChatChat
-echo "运行 chatchat init..."
+# 配置目录路径
 cd /root/MDT/libs/chatchat-server/chatchat
-python cli.py init
+
+# 确保使用正确的模型配置
+echo "确保模型配置正确..."
+if [ -f "/root/MDT/model_settings.yaml" ]; then
+    cp -f /root/MDT/model_settings.yaml /root/mdt_data/model_settings.yaml
+    echo "模型配置已更新为qwen3:4b-instruct-2507-q8_0和nomic-embed-text:latest"
+fi
 
 # 初始化知识库
 echo "运行 chatchat kb -r..."

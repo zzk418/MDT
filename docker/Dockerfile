@@ -46,10 +46,10 @@ WORKDIR /root/MDT/libs/chatchat-server
 ENV UV_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
 
 # 使用uv同步依赖（替代poetry install）- 移除xinference扩展
-RUN uv pip install --system -e .
+RUN uv pip install --system .
 
 # 安装llama-cpp-python（如果需要LLaMA环境）
-RUN uv pip install --system ollama
+# RUN uv pip install --system ollama  # 注释掉，因为可能已经在依赖中
 
 ## 确保 Python 可以找到 chatchat 模块
 ENV PYTHONPATH="/root/MDT/libs/chatchat-server:${PYTHONPATH}"
@@ -57,6 +57,9 @@ ENV PYTHONPATH="/root/MDT/libs/chatchat-server:${PYTHONPATH}"
 # 初始化配置
 WORKDIR /root/MDT/libs/chatchat-server/chatchat
 RUN python cli.py init
+
+# 覆盖默认配置为正确的模型配置
+COPY model_settings.yaml /root/mdt_data/model_settings.yaml
 
 EXPOSE 7861 8501
 
