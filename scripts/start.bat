@@ -1,11 +1,11 @@
 @echo off
 chcp 65001 >nul
-title MDT 快速重启
+title MDT 启动
 
 cd /d "%~dp0\.."
 
 echo ============================================
-echo   MDT 快速重启（代码热更新，无需重建镜像）
+echo   MDT 启动（代码热更新，无需重建镜像）
 echo ============================================
 echo.
 echo   适用场景：修改了 Python 代码、startup.sh、model_settings.yaml
@@ -19,12 +19,12 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
-echo [OK] 重启 chatchat 服务...
+echo [OK] 启动 chatchat 服务...
 docker compose -f docker\docker-compose.win.yaml --env-file .env restart chatchat
 
 echo.
 echo ============================================
-echo   重启完成，等待服务启动约 15-20 秒后访问：
+echo   启动完成，等待服务启动约 15-20 秒后访问：
 echo   本地 WebUI: http://localhost:8501
 echo ============================================
 pause
