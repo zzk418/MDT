@@ -26,9 +26,9 @@ services:
     environment:
       - NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN}
       - OLLAMA_MODELS=${OLLAMA_MODELS}
-    # volumes:
-    #   - ../data:/root/MDT/mdt_data
-    #   - ../libs/chatchat-server:/root/MDT/libs/chatchat-server
+    #volumes:
+    #  - ../data:/root/MDT/mdt_data
+    #  - ../libs/chatchat-server:/root/MDT/libs/chatchat-server
     ports:
       - "7861:7861"
       - "8501:8501"  # WebUI端口

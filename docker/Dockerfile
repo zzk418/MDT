@@ -39,6 +39,8 @@ RUN wget -q https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-amd64.tgz
 # 复制整个MDT项目
 COPY . /root/MDT
 
+RUN sed -i 's/\r$//' /root/MDT/.env || true
+
 # 使用uv安装依赖
 WORKDIR /root/MDT/libs/chatchat-server
 
@@ -56,6 +58,9 @@ ENV PYTHONPATH="/root/MDT/libs/chatchat-server:${PYTHONPATH}"
 
 # 初始化配置
 WORKDIR /root/MDT/libs/chatchat-server/chatchat
+
+RUN cp -r /root/MDT/data/* ./data/
+
 RUN python cli.py init
 
 # 覆盖默认配置为正确的模型配置
@@ -65,6 +70,10 @@ EXPOSE 7861 8501
 
 # 复制启动脚本
 COPY docker/startup.sh /root/startup.sh
+
+# win 修改 CRLF
+RUN sed -i 's/\r$//' /root/startup.sh
+
 RUN chmod +x /root/startup.sh
 
 ENTRYPOINT ["/root/startup.sh"]
