@@ -875,6 +875,7 @@ def get_httpx_client(
                 os.environ.get("all_proxy")
                 if os.environ.get("all_proxy")
                    and len(os.environ.get("all_proxy").strip())
+                   and not os.environ.get("all_proxy", "").startswith("socks")
                 else None
             ),
         }

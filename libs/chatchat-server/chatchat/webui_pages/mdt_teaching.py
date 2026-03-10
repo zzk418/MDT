@@ -9,6 +9,7 @@ from PIL import Image as PILImage
 from typing import Dict, List
 from urllib.parse import urlencode
 
+import httpx
 import openai
 import streamlit as st
 import streamlit_antd_components as sac
@@ -237,7 +238,7 @@ def upload_temp_docs(files, _api: ApiRequest) -> str:
 @st.cache_data
 def upload_image_file(file_name: str, content: bytes) -> dict:
     '''upload image for vision model using openai sdk'''
-    client = openai.Client(base_url=f"{api_address()}/v1", api_key="NONE")
+    client = openai.Client(base_url=f"{api_address()}/v1", api_key="NONE", http_client=httpx.Client(trust_env=False))
     return client.files.create(file=(file_name, content), purpose="assistants").to_dict()
 
 
@@ -857,7 +858,7 @@ def mdt_teaching_page(api: ApiRequest, is_lite: bool = False):
         text = ""
         started = False
         
-        client = openai.Client(base_url=f"{api_address()}/chat", api_key="NONE", timeout=100000)
+        client = openai.Client(base_url=f"{api_address()}/chat", api_key="NONE", timeout=100000, http_client=httpx.Client(trust_env=False))
         
         messages = history + [{"role": "user", "content": prompt}]
         
