@@ -407,7 +407,7 @@ def check_embed_model(embed_model: str = None) -> Tuple[bool, str]:
         return True, ""
     except Exception as e:
         msg = f"failed to access embed model '{embed_model}': {e}"
-        logger.error(msg)
+        logger.error(msg.replace("<", "\\<"))
         return False, msg
 
 

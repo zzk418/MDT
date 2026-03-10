@@ -73,9 +73,6 @@ async def kb_chat(query: str = Body(..., description="用户输入", examples=["
 
             if mode == "local_kb":
                 kb = KBServiceFactory.get_service_by_name(kb_name)
-                ok, msg = kb.check_embed_model()
-                if not ok:
-                    raise ValueError(msg)
                 docs = await run_in_threadpool(search_docs,
                                                 query=query,
                                                 knowledge_base_name=kb_name,
@@ -85,9 +82,6 @@ async def kb_chat(query: str = Body(..., description="用户输入", examples=["
                                                 metadata={})
                 source_documents = format_reference(kb_name, docs, api_address(is_public=True))
             elif mode == "temp_kb":
-                ok, msg = check_embed_model()
-                if not ok:
-                    raise ValueError(msg)
                 docs = await run_in_threadpool(search_temp_docs,
                                                 kb_name,
                                                 query=query,
@@ -219,7 +213,7 @@ async def kb_chat(query: str = Body(..., description="用户输入", examples=["
             logger.warning("streaming progress has been interrupted by user.")
             return
         except Exception as e:
-            logger.error(f"error in knowledge chat: {e}")
+            logger.error("error in knowledge chat: {}", repr(e))
             yield {"data": json.dumps({"error": str(e)})}
             return
 
