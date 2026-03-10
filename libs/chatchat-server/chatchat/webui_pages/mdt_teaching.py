@@ -381,145 +381,138 @@ def display_case_analysis(selected_case):
     if not selected_case:
         st.info("请从侧边栏选择一个教学案例开始分析")
         return
-    
+
     st.header(f"📊 案例分析：{selected_case['title']}")
-    
+
     # 显示案例内容
     with st.expander("📖 病例详细信息", expanded=True):
         st.markdown(selected_case['content'])
-    
+
     # 分析工具
     col1, col2, col3 = st.columns(3)
-    
+
     with col1:
         if st.button("🩺 诊断思路分析", use_container_width=True):
-            chat_box.user_say("请帮我分析这个病例的诊断思路")
-            chat_box.ai_say("""
-让我帮您分析这个病例的诊断思路：
+            st.session_state["pending_prompt"] = f"请详细分析病例「{selected_case['title']}」的诊断思路，包括：病史特点、关键检查结果解读、鉴别诊断要点以及最终诊断依据。"
+            st.rerun()
 
-1. **病史特点分析**：
-   - 主要症状特征
-   - 危险因素评估
-   - 疾病进展速度
-
-2. **检查结果解读**：
-   - 关键指标意义
-   - 影像学特征
-   - 病理学表现
-
-3. **鉴别诊断**：
-   - 主要鉴别疾病
-   - 排除标准
-   - 确诊依据
-
-请告诉我您对这个病例的具体疑问。
-""")
-    
     with col2:
         if st.button("💊 治疗方案讨论", use_container_width=True):
-            chat_box.user_say("请讨论这个病例的治疗方案")
-            chat_box.ai_say("""
-让我们讨论治疗方案选择：
+            st.session_state["pending_prompt"] = f"请针对病例「{selected_case['title']}」讨论多学科治疗方案，包括：各学科治疗选择、个体化考量因素、治疗优先级排序以及当前循证医学证据支持。"
+            st.rerun()
 
-**多学科治疗选择**：
-1. 外科治疗：手术适应症、术式选择
-2. 内科治疗：药物选择、疗程安排  
-3. 放疗治疗：适应症、技术选择
-4. 综合治疗：多学科协作方案
-
-**个体化考量**：
-- 患者年龄和身体状况
-- 肿瘤分期和分级
-- 患者意愿和生活质量
-
-请提出您对治疗方案的具体问题。
-""")
-    
     with col3:
         if st.button("🤝 MDT协作要点", use_container_width=True):
-            chat_box.user_say("这个病例的MDT协作要点是什么？")
-            chat_box.ai_say("""
-这个病例的MDT协作要点包括：
-
-**各学科角色**：
-- 泌尿外科：手术决策和技术实施
-- 肿瘤内科：系统治疗方案
-- 放疗科：放射治疗规划
-- 病理科：诊断确认和分级
-- 影像科：分期评估和随访
-
-**协作关键点**：
-- 治疗时机协调
-- 信息共享机制
-- 决策共识建立
-- 随访计划制定
-
-请分享您的协作经验或疑问。
-""")
+            st.session_state["pending_prompt"] = f"请分析病例「{selected_case['title']}」的MDT协作要点，包括：各参与学科的职责分工、关键决策节点、信息共享机制以及协作中的难点和注意事项。"
+            st.rerun()
 
 
 def display_virtual_simulation():
     """显示虚拟仿真界面"""
     st.header("🔄 虚拟仿真训练")
-    
-    st.info("虚拟仿真功能正在开发中...")
-    
+
+    selected_case = st.session_state.get("selected_case")
+    case_title = selected_case["title"] if selected_case else "当前选中案例"
+
     col1, col2 = st.columns(2)
-    
+
     with col1:
-        st.subheader("影像诊断模拟")
+        st.subheader("🖼️ 影像诊断模拟")
+        st.caption("模拟阅片过程，训练影像学判断能力")
         if st.button("开始影像诊断训练", use_container_width=True):
             st.session_state.simulation_mode = "imaging"
-            chat_box.user_say("开始影像诊断模拟训练")
-            chat_box.ai_say("""
-欢迎来到影像诊断模拟训练！
+            st.session_state["pending_prompt"] = (
+                f"请模拟一个泌尿系统影像诊断训练场景（基于病例：{case_title}）。"
+                "以考官身份，先描述影像学表现（不要直接给出结论），引导我逐步分析关键征象，"
+                "提出问题让我判断影像学诊断，并在我回答后给出点评和指导。"
+            )
+            st.rerun()
 
-我将为您展示一系列泌尿系统影像学图像，请您：
-1. 描述影像学表现
-2. 提出诊断意见
-3. 分析关键征象
-
-准备好了吗？让我们开始第一个病例...
-""")
-    
     with col2:
-        st.subheader("手术规划模拟")
+        st.subheader("🔪 手术规划模拟")
+        st.caption("模拟术前讨论，训练手术方案制定能力")
         if st.button("开始手术规划训练", use_container_width=True):
             st.session_state.simulation_mode = "surgery"
-            chat_box.user_say("开始手术规划模拟训练")
-            chat_box.ai_say("""
-欢迎来到手术规划模拟训练！
+            st.session_state["pending_prompt"] = (
+                f"请模拟一个手术规划讨论场景（基于病例：{case_title}）。"
+                "以主治医师身份，引导我完成：1）术前影像评估；2）手术入路选择；"
+                "3）术中风险预判；4）备选方案制定。逐步提问，根据我的回答给出专业反馈。"
+            )
+            st.rerun()
 
-在这个训练中，您将：
-1. 分析术前影像资料
-2. 制定手术方案
-3. 评估手术风险
-4. 规划手术步骤
-
-请准备好开始您的手术规划...
-""")
+    st.divider()
+    st.subheader("🏥 MDT会议模拟")
+    st.caption("模拟多学科会诊讨论，训练协作沟通能力")
+    col3, col4 = st.columns(2)
+    with col3:
+        if st.button("模拟MDT病例讨论", use_container_width=True):
+            st.session_state["pending_prompt"] = (
+                f"请模拟一次多学科会诊（MDT）讨论（病例：{case_title}）。"
+                "你扮演MDT会议主持人，依次让我代表泌尿外科、肿瘤内科、放疗科、病理科、影像科发言，"
+                "评价各学科意见的合理性，并引导团队形成最终诊疗共识。"
+            )
+            st.rerun()
+    with col4:
+        if st.button("模拟术后并发症处理", use_container_width=True):
+            st.session_state["pending_prompt"] = (
+                f"请模拟一个术后并发症处理场景（基于病例：{case_title}的治疗阶段）。"
+                "描述一种可能出现的术后并发症，提问我如何识别和处理，"
+                "根据我的回答给出临床指导意见，强调多学科协作处理要点。"
+            )
+            st.rerun()
 
 
 def display_team_collaboration():
     """显示团队协作界面"""
     st.header("👥 团队协作项目")
-    
-    st.info("团队协作功能正在开发中...")
-    
-    # 模拟团队项目
-    projects = [
-        {"name": "复杂肾肿瘤MDT方案", "status": "进行中", "members": 4},
-        {"name": "晚期前列腺癌综合治疗", "status": "已完成", "members": 5},
-        {"name": "膀胱癌新辅助治疗", "status": "待开始", "members": 3}
-    ]
-    
-    for project in projects:
-        with st.expander(f"{project['name']} - {project['status']}"):
-            st.write(f"团队成员：{project['members']}人")
-            if project['status'] == "进行中":
-                if st.button(f"加入{project['name']}", key=project['name']):
-                    chat_box.user_say(f"我想加入团队项目：{project['name']}")
-                    chat_box.ai_say(f"欢迎加入'{project['name']}'团队项目！在这个项目中，您将与其他{project['members']-1}位医师协作完成病例分析和治疗方案制定。")
+
+    selected_case = st.session_state.get("selected_case")
+    case_title = selected_case["title"] if selected_case else "当前选中案例"
+
+    st.subheader("🗣️ 角色扮演协作")
+    st.caption("选择你在MDT团队中扮演的专科角色，与AI协作完成病例讨论")
+
+    role_options = ["泌尿外科医师", "肿瘤内科医师", "放疗科医师", "病理科医师", "影像科医师", "护理团队"]
+    selected_role = st.selectbox("选择你的角色", role_options, key="team_role")
+
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("开始角色扮演讨论", use_container_width=True):
+            st.session_state["pending_prompt"] = (
+                f"我将扮演{selected_role}参与病例「{case_title}」的MDT讨论。"
+                f"请你扮演其他学科的专家（包括与{selected_role}不同的学科），"
+                f"轮流向我提出需要{selected_role}解答的专科问题，并对我的回答给出跨学科视角的点评，"
+                "帮助我理解其他学科的关注点和协作要点。"
+            )
+            st.rerun()
+    with col2:
+        if st.button("多学科意见综合", use_container_width=True):
+            st.session_state["pending_prompt"] = (
+                f"针对病例「{case_title}」，请分别从泌尿外科、肿瘤内科、放疗科、病理科、影像科"
+                "五个专科角度，各自提出2-3个关键意见和关注点，"
+                "然后帮助分析各学科意见的异同，并给出综合的MDT诊疗建议。"
+            )
+            st.rerun()
+
+    st.divider()
+    st.subheader("💡 协作技能训练")
+    col3, col4 = st.columns(2)
+    with col3:
+        if st.button("沟通技巧训练", use_container_width=True):
+            st.session_state["pending_prompt"] = (
+                f"请针对病例「{case_title}」设计一个医患沟通场景训练。"
+                "你扮演患者或家属，我来练习如何向非医疗背景的患者解释MDT诊疗方案，"
+                "评估我的沟通是否清晰、有同理心，并给出改进建议。"
+            )
+            st.rerun()
+    with col4:
+        if st.button("学科间分歧处理", use_container_width=True):
+            st.session_state["pending_prompt"] = (
+                f"请模拟病例「{case_title}」MDT讨论中出现学科意见分歧的场景。"
+                "设定两个学科对治疗方案有明显分歧，引导我分析分歧原因、寻找共同点，"
+                "练习如何在尊重各学科专业判断的基础上达成团队共识。"
+            )
+            st.rerun()
 
 
 def display_assessment_evaluation():
@@ -559,38 +552,31 @@ def display_assessment_evaluation():
     st.session_state.assessment_scores = assessment_scores
     
     # 计算总分
-    if st.button("📈 计算总分", use_container_width=True):
+    if st.button("📈 计算总分并获取AI反馈", use_container_width=True):
         total_score = 0
+        score_details = []
         for criterion, details in ASSESSMENT_CRITERIA.items():
             score_index = details["评分标准"].index(assessment_scores[criterion])
             normalized_score = (len(details["评分标准"]) - score_index - 1) / (len(details["评分标准"]) - 1)
             weighted_score = normalized_score * details["权重"] * 100
             total_score += weighted_score
-        
+            score_details.append(f"- {criterion}：{assessment_scores[criterion]}（权重{details['权重']}）")
+
         st.success(f"**总分: {total_score:.1f}/100**")
-        
-        # 提供反馈
-        chat_box.user_say(f"请对我的考核结果提供反馈，总分: {total_score:.1f}/100")
-        chat_box.ai_say(f"""
-根据您的考核结果（总分: {total_score:.1f}/100），我提供以下反馈：
 
-**优势方面**:
-1. 诊断准确性表现良好
-2. 治疗方案选择合理
-3. 多学科协作意识较强
-
-**改进建议**:
-1. 进一步加强影像学解读能力
-2. 提高与病理科沟通的主动性
-3. 完善术后随访计划制定
-
-**个性化学习计划**:
-1. 建议完成3个类似病例的深度分析
-2. 参加影像诊断专题培训
-3. 参与至少2次MDT病例讨论
-
-请继续努力，您的进步很明显！
-""")
+        score_summary = "\n".join(score_details)
+        st.session_state["pending_prompt"] = (
+            f"请对以下考核结果提供详细的专业反馈：\n\n"
+            f"考核案例：{selected_case['title']}（难度：{selected_case['difficulty']}）\n"
+            f"总分：{total_score:.1f}/100\n\n"
+            f"各维度评分：\n{score_summary}\n\n"
+            "请从以下角度给出建设性反馈：\n"
+            "1. 各维度表现分析（优势与不足）\n"
+            "2. 针对薄弱环节的具体改进建议\n"
+            "3. 个性化的下一步学习计划\n"
+            "4. 推荐的相关学习资源或训练方向"
+        )
+        st.rerun()
     
     # 讨论记录
     st.subheader("💬 讨论记录")
@@ -620,47 +606,21 @@ def display_assessment_evaluation():
     
     # 导出考核报告
     if st.button("📄 生成考核报告", use_container_width=True):
-        chat_box.user_say("请帮我生成一份详细的考核评估报告")
-        chat_box.ai_say(f"""
-# 📋 MDT教学考核评估报告
-
-## 基本信息
-- **考核时间**: {datetime.now().strftime("%Y-%m-%d %H:%M")}
-- **考核案例**: {selected_case['title']}
-- **案例难度**: {selected_case['difficulty']}
-
-## 考核评分结果
-{chr(10).join([f"- **{criterion}**: {assessment_scores[criterion]} (权重: {ASSESSMENT_CRITERIA[criterion]['权重']})" for criterion in ASSESSMENT_CRITERIA])}
-
-## 综合评估
-根据您的考核表现，您在以下方面表现突出：
-1. 临床思维逻辑清晰
-2. 治疗方案选择合理
-3. 团队协作意识良好
-
-## 专业发展建议
-1. **短期目标** (1-3个月):
-   - 完成2个高级难度病例分析
-   - 参与影像诊断专题学习
-   - 撰写1篇病例分析报告
-
-2. **中期目标** (3-6个月):
-   - 独立主持MDT病例讨论
-   - 掌握新技术应用（如AI辅助诊断）
-   - 参与教学培训活动
-
-3. **长期目标** (6-12个月):
-   - 成为MDT团队核心成员
-   - 开展临床研究项目
-   - 指导初级医师成长
-
-## 签名
-- **评估专家**: AI教学系统
-- **日期**: {datetime.now().strftime("%Y-%m-%d")}
-
----
-*本报告由AI教学系统自动生成，仅供参考学习使用*
-""")
+        score_details = "\n".join([
+            f"- **{criterion}**: {assessment_scores.get(criterion, ASSESSMENT_CRITERIA[criterion]['评分标准'][1])} (权重: {ASSESSMENT_CRITERIA[criterion]['权重']})"
+            for criterion in ASSESSMENT_CRITERIA
+        ])
+        st.session_state["pending_prompt"] = (
+            f"请帮我生成一份完整的MDT教学考核评估报告，格式规范，内容专业。\n\n"
+            f"基本信息：\n"
+            f"- 考核时间：{datetime.now().strftime('%Y-%m-%d %H:%M')}\n"
+            f"- 考核案例：{selected_case['title']}\n"
+            f"- 案例难度：{selected_case['difficulty']}\n\n"
+            f"考核评分结果：\n{score_details}\n\n"
+            "报告应包含：考核概述、各维度详细评价、综合评分分析、专业发展建议（短期/中期/长期目标）、"
+            "以及对该学员MDT能力培养的总体意见。报告最后注明由AI教学系统生成。"
+        )
+        st.rerun()
 
 
 def mdt_teaching_page(api: ApiRequest, is_lite: bool = False):
@@ -766,17 +726,37 @@ def mdt_teaching_page(api: ApiRequest, is_lite: bool = False):
             pass
         
         st.divider()
-        
+
+        # 知识库关联
+        st.subheader("📚 知识库关联")
+        kb_list = ["不使用知识库"] + [x["kb_name"] for x in api.list_knowledge_bases()]
+        selected_kb = st.selectbox(
+            "关联知识库",
+            kb_list,
+            key="mdt_selected_kb",
+            help="选择知识库后，对话将结合知识库内容进行回答"
+        )
+        if selected_kb != "不使用知识库":
+            kb_top_k = st.number_input("匹配知识条数", 1, 20, value=3, key="mdt_kb_top_k")
+            score_threshold = st.slider("匹配分数阈值", 0.0, 2.0, value=1.0, step=0.01, key="mdt_score_threshold")
+
+        st.divider()
+
+        # 对话轮数配置
+        history_len = st.number_input("多轮对话保留轮数", 0, 20, value=5, key="mdt_history_len")
+
+        st.divider()
+
         # 模型配置
         if st.button("⚙️ 模型配置", use_container_width=True):
             widget_keys = ["platform", "llm_model", "temperature", "system_message"]
             chat_box.context_to_session(include=widget_keys)
             llm_model_setting()
-        
+
         # 系统提示词显示
         with st.expander("📋 当前系统提示词"):
             system_prompt = build_teaching_system_prompt(
-                teaching_mode, 
+                teaching_mode,
                 st.session_state.get("selected_case")
             )
             st.text_area("系统提示词", system_prompt, height=200, disabled=True)
@@ -827,86 +807,142 @@ def mdt_teaching_page(api: ApiRequest, is_lite: bool = False):
                 use_container_width=True,
             )
     
-    # 处理用户输入
-    if prompt:
-        # 构建chat_model_config，参考dialogue.py
-        llm_model_config = Settings.model_settings.LLM_MODEL_CONFIG
-        chat_model_config = {key: {} for key in llm_model_config.keys()}
-        for key in llm_model_config:
-            if c := llm_model_config[key]:
-                model = c.get("model", "").strip() or get_default_llm()
-                chat_model_config[key][model] = llm_model_config[key]
-        llm_model = ctx.get("llm_model")
-        if llm_model is not None:
-            chat_model_config["llm_model"][llm_model] = llm_model_config["llm_model"].get(
-                llm_model, {}
+    # 处理pending_prompt（由按钮触发的快捷提问）
+    pending_prompt = st.session_state.pop("pending_prompt", None)
+    active_prompt = pending_prompt or prompt
+
+    if active_prompt:
+        selected_kb = st.session_state.get("mdt_selected_kb", "不使用知识库")
+        kb_top_k = st.session_state.get("mdt_kb_top_k", 3)
+        score_threshold = st.session_state.get("mdt_score_threshold", 1.0)
+        configured_history_len = st.session_state.get("mdt_history_len", 5)
+
+        history = get_messages_history(configured_history_len)
+
+        # 系统提示注入历史（若历史为空则添加）
+        system_msg = {"role": "system", "content": build_teaching_system_prompt(teaching_mode, selected_case)}
+        messages = [system_msg] + history + [{"role": "user", "content": active_prompt}]
+
+        chat_box.user_say(active_prompt)
+
+        api_url = api_address(is_public=True)
+        use_kb = selected_kb and selected_kb != "不使用知识库"
+
+        if use_kb:
+            client = openai.Client(
+                base_url=f"{api_url}/knowledge_base/local_kb/{selected_kb}",
+                api_key="NONE",
+                timeout=100000,
+                http_client=httpx.Client(trust_env=False),
             )
-        
-        # 获取历史消息
-        history_len = 1
-        if chat_model_config.get("llm_model"):
-            first_model = next(iter(chat_model_config["llm_model"]), None)
-            if first_model:
-                model_config = chat_model_config["llm_model"][first_model]
-                history_len = model_config.get("history_len", 1)
-        
-        history = get_messages_history(history_len)
-        
-        chat_box.user_say(prompt)
-        chat_box.ai_say("正在思考...")
-        
-        text = ""
-        started = False
-        
-        client = openai.Client(base_url=f"{api_address()}/chat", api_key="NONE", timeout=100000, http_client=httpx.Client(trust_env=False))
-        
-        messages = history + [{"role": "user", "content": prompt}]
-        
-        # 构建API调用参数
-        extra_body = dict(
-            chat_model_config=chat_model_config,
-            conversation_id=chat_box.context["uid"],
-        )
-        
-        params = dict(
-            messages=messages,
-            model=ctx.get("llm_model"),
-            stream=True,
-            extra_body=extra_body,
-        )
-        
-        if Settings.model_settings.MAX_TOKENS:
-            params["max_tokens"] = Settings.model_settings.MAX_TOKENS
-        
-        try:
-            for d in client.chat.completions.create(**params):
-                message_id = d.message_id
-                metadata = {"message_id": message_id}
-                
-                # 清除初始消息
-                if not started:
-                    chat_box.update_msg("", streaming=False)
-                    started = True
-                
-                if d.status == AgentStatus.error:
-                    st.error(d.choices[0].delta.content)
-                elif d.status == AgentStatus.llm_new_token:
-                    text += d.choices[0].delta.content or ""
-                    chat_box.update_msg(
-                        text.replace("\n", "\n\n"), streaming=True, metadata=metadata
-                    )
-                elif d.status == AgentStatus.llm_end:
-                    text += d.choices[0].delta.content or ""
-                    chat_box.update_msg(
-                        text.replace("\n", "\n\n"), streaming=False, metadata=metadata
-                    )
-                elif d.status is None:  # 非Agent聊天
-                    text += d.choices[0].delta.content or ""
-                    chat_box.update_msg(
-                        text.replace("\n", "\n\n"), streaming=True, metadata=metadata
-                    )
-                
+            chat_box.ai_say([
+                Markdown("...", in_expander=True, title=f"知识库「{selected_kb}」匹配结果", state="running"),
+                f"正在查询知识库 `{selected_kb}`，请稍候...",
+            ])
+            extra_body = dict(
+                top_k=kb_top_k,
+                score_threshold=score_threshold,
+                temperature=ctx.get("temperature"),
+                prompt_name="default",
+                return_direct=False,
+            )
+            params = dict(
+                messages=messages,
+                model=ctx.get("llm_model"),
+                stream=True,
+                extra_body=extra_body,
+            )
+            text = ""
+            docs_text = ""
+            started = False
+            try:
+                for d in client.chat.completions.create(**params):
+                    metadata = {"message_id": getattr(d, "message_id", "")}
+                    if not started:
+                        chat_box.update_msg("", element_index=1, streaming=False)
+                        started = True
+                    if hasattr(d, "docs"):
+                        docs_text = d.docs
+                        chat_box.update_msg(
+                            docs_text, element_index=0, streaming=False, state="complete"
+                        )
+                    else:
+                        text += d.choices[0].delta.content or ""
+                        chat_box.update_msg(
+                            text.replace("\n", "\n\n"), element_index=1, streaming=True, metadata=metadata
+                        )
+                chat_box.update_msg(text.replace("\n", "\n\n"), element_index=1, streaming=False)
+            except Exception as e:
+                st.error(str(e))
+                chat_box.update_msg(f"抱歉，处理请求时出现错误：{str(e)}", element_index=1, streaming=False)
+        else:
+            # 普通对话（多轮，含系统提示）
+            llm_model_config = Settings.model_settings.LLM_MODEL_CONFIG
+            chat_model_config = {key: {} for key in llm_model_config.keys()}
+            for key in llm_model_config:
+                if c := llm_model_config[key]:
+                    model = c.get("model", "").strip() or get_default_llm()
+                    chat_model_config[key][model] = llm_model_config[key]
+            llm_model = ctx.get("llm_model")
+            if llm_model is not None:
+                chat_model_config["llm_model"][llm_model] = llm_model_config["llm_model"].get(
+                    llm_model, {}
+                )
+
+            chat_box.ai_say("正在思考...")
+            text = ""
+            started = False
+
+            client = openai.Client(
+                base_url=f"{api_address()}/chat",
+                api_key="NONE",
+                timeout=100000,
+                http_client=httpx.Client(trust_env=False),
+            )
+
+            extra_body = dict(
+                chat_model_config=chat_model_config,
+                conversation_id=chat_box.context["uid"],
+            )
+
+            params = dict(
+                messages=messages,
+                model=ctx.get("llm_model"),
+                stream=True,
+                extra_body=extra_body,
+            )
+
+            if Settings.model_settings.MAX_TOKENS:
+                params["max_tokens"] = Settings.model_settings.MAX_TOKENS
+
+            try:
+                for d in client.chat.completions.create(**params):
+                    message_id = d.message_id
+                    metadata = {"message_id": message_id}
+
+                    if not started:
+                        chat_box.update_msg("", streaming=False)
+                        started = True
+
+                    if d.status == AgentStatus.error:
+                        st.error(d.choices[0].delta.content)
+                    elif d.status == AgentStatus.llm_new_token:
+                        text += d.choices[0].delta.content or ""
+                        chat_box.update_msg(
+                            text.replace("\n", "\n\n"), streaming=True, metadata=metadata
+                        )
+                    elif d.status == AgentStatus.llm_end:
+                        text += d.choices[0].delta.content or ""
+                        chat_box.update_msg(
+                            text.replace("\n", "\n\n"), streaming=False, metadata=metadata
+                        )
+                    elif d.status is None:  # 非Agent聊天
+                        text += d.choices[0].delta.content or ""
+                        chat_box.update_msg(
+                            text.replace("\n", "\n\n"), streaming=True, metadata=metadata
+                        )
+
                 chat_box.update_msg(text, streaming=False, metadata=metadata)
-        except Exception as e:
-            st.error(str(e))
-            chat_box.update_msg(f"抱歉，处理请求时出现错误：{str(e)}", streaming=False)
+            except Exception as e:
+                st.error(str(e))
+                chat_box.update_msg(f"抱歉，处理请求时出现错误：{str(e)}", streaming=False)

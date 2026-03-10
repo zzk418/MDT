@@ -58,7 +58,6 @@ if __name__ == "__main__":
         selected_page = sac.menu(
             [
                 sac.MenuItem("MDT诊疗教学", icon="hospital"),
-                sac.MenuItem("多功能对话", icon="chat"),
                 sac.MenuItem("RAG 对话", icon="database"),
                 sac.MenuItem("知识库管理", icon="hdd-stack"),
                 sac.MenuItem("MCP 管理", icon="hdd-stack"),
