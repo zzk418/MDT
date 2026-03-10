@@ -33,17 +33,17 @@ services:
       - CLOUD_API_BASE_URL=${CLOUD_API_BASE_URL:-}
       - CLOUD_LLM_MODEL=${CLOUD_LLM_MODEL:-}
     volumes:
+      # 持久化其余数据（对话记录、临时文件等），先挂载命名卷作为基础
+      - mdt_data:/root/mdt_data
       # 挂载代码卷：代码改动后只需 docker compose restart chatchat，无需 --build
       - ../libs/chatchat-server:/root/MDT/libs/chatchat-server
       - ../model_settings.yaml:/root/MDT/model_settings.yaml
-      # 挂载配置文件：修改后只需 restart，无需 --build
+      # 挂载配置文件：修改后只需 restart，无需 --build（覆盖命名卷中的同名文件）
       - ../kb_settings.yaml:/root/mdt_data/kb_settings.yaml
       - ../prompt_settings.yaml:/root/mdt_data/prompt_settings.yaml
       - ../basic_settings.yaml:/root/mdt_data/basic_settings.yaml
-      # 挂载知识库数据：本地 data/ 与容器同步，方便直接管理文件
+      # 挂载知识库数据：本地 data/ 与容器同步，方便直接管理文件（覆盖命名卷中的同名目录）
       - ../data/knowledge_base:/root/mdt_data/data/knowledge_base
-      # 持久化其余数据（对话记录、临时文件等）
-      - mdt_data:/root/mdt_data
     ports:
       - "7861:7861"
       - "8501:8501"  # WebUI端口
