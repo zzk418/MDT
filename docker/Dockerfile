@@ -63,8 +63,12 @@ RUN cp -r /root/MDT/data/* ./data/
 
 RUN python cli.py init
 
-# 覆盖默认配置为正确的模型配置
+# 覆盖默认配置为根目录统一维护的配置文件（唯一来源）
+COPY basic_settings.yaml /root/mdt_data/basic_settings.yaml
+COPY kb_settings.yaml /root/mdt_data/kb_settings.yaml
 COPY model_settings.yaml /root/mdt_data/model_settings.yaml
+COPY prompt_settings.yaml /root/mdt_data/prompt_settings.yaml
+COPY tool_settings.yaml /root/mdt_data/tool_settings.yaml
 
 EXPOSE 7861 8501
 
