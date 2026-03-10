@@ -116,9 +116,12 @@ def kb_chat(api: ApiRequest):
             with placeholder.container():
                 if dialogue_mode == "知识库问答":
                     kb_list = [x["kb_name"] for x in api.list_knowledge_bases()]
+                    default_kb = st.session_state.get("selected_kb", Settings.kb_settings.DEFAULT_KNOWLEDGE_BASE)
+                    kb_index = kb_list.index(default_kb) if default_kb in kb_list else 0
                     selected_kb = st.selectbox(
                         "请选择知识库：",
                         kb_list,
+                        index=kb_index,
                         on_change=on_kb_change,
                         key="selected_kb",
                     )
@@ -224,16 +227,19 @@ def kb_chat(api: ApiRequest):
         try:
             for d in client.chat.completions.create(messages=messages, model=llm_model, stream=True, extra_body=extra_body):
                 if first:
-                    chat_box.update_msg("\n\n".join(d.docs), element_index=0, streaming=False, state="complete")
+                    docs = getattr(d, "docs", None)
+                    if docs is None and isinstance(d, list):
+                        docs = d
+                    chat_box.update_msg("\n\n".join(docs or []), element_index=0, streaming=False, state="complete")
                     chat_box.update_msg("", streaming=False)
                     first = False
                     continue
                 text += d.choices[0].delta.content or ""
                 chat_box.update_msg(text.replace("\n", "\n\n"), streaming=True)
             chat_box.update_msg(text, streaming=False)
-            # TODO: 搜索未配置API KEY时产生报错
         except Exception as e:
-            st.error(e.body)
+            err = getattr(e, "body", None) or str(e)
+            st.error(err)
 
     now = datetime.now()
     with tabs[1]:
