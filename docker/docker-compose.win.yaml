@@ -32,10 +32,19 @@ services:
       - CLOUD_API_KEY=${CLOUD_API_KEY:-}
       - CLOUD_API_BASE_URL=${CLOUD_API_BASE_URL:-}
       - CLOUD_LLM_MODEL=${CLOUD_LLM_MODEL:-}
-    #volumes:
-    #  - ../data:/root/MDT/mdt_data
-    #  - ../libs/chatchat-server:/root/MDT/libs/chatchat-server
+    volumes:
+      # 挂载代码卷：代码改动后只需 docker compose restart chatchat，无需 --build
+      - ../libs/chatchat-server:/root/MDT/libs/chatchat-server
+      - ../docker/startup.sh:/root/startup.sh
+      - ../model_settings.yaml:/root/MDT/model_settings.yaml
+      # 持久化数据（知识库、对话记录等）
+      - mdt_data:/root/mdt_data
     ports:
       - "7861:7861"
       - "8501:8501"  # WebUI端口
       - "4040:4040"  # ngrok web界面
+
+volumes:
+  mdt_data:
+    # 命名卷：持久化 /root/mdt_data（知识库向量、模型配置、对话记录）
+    # 首次启动会自动创建；如需完全重置运行: docker volume rm mdt_mdt_data
