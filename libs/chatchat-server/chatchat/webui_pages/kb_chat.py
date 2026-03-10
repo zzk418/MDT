@@ -1,8 +1,9 @@
 from datetime import datetime
+import json
 import uuid
 from typing import List, Dict
 
-import openai
+import httpx
 import streamlit as st
 import streamlit_antd_components as sac
 from streamlit_chatbox import *
@@ -199,7 +200,7 @@ def kb_chat(api: ApiRequest):
     
         api_url = api_address(is_public=True)
         if dialogue_mode == "知识库问答":
-            client = openai.Client(base_url=f"{api_url}/knowledge_base/local_kb/{selected_kb}", api_key="NONE")
+            chat_endpoint = f"{api_url}/knowledge_base/local_kb/{selected_kb}/chat/completions"
             chat_box.ai_say([
                 Markdown("...", in_expander=True, title="知识库匹配结果", state="running", expanded=return_direct),
                 f"正在查询知识库 `{selected_kb}` ...",
@@ -208,38 +209,57 @@ def kb_chat(api: ApiRequest):
             if st.session_state.get("file_chat_id") is None:
                 st.error("请先上传文件再进行对话")
                 st.stop()
-            knowledge_id=st.session_state.get("file_chat_id")
-            client = openai.Client(base_url=f"{api_url}/knowledge_base/temp_kb/{knowledge_id}", api_key="NONE")
+            knowledge_id = st.session_state.get("file_chat_id")
+            chat_endpoint = f"{api_url}/knowledge_base/temp_kb/{knowledge_id}/chat/completions"
             chat_box.ai_say([
                 Markdown("...", in_expander=True, title="知识库匹配结果", state="running", expanded=return_direct),
-                f"正在查询文件 `{st.session_state.get('file_chat_id')}` ...",
+                f"正在查询文件 `{knowledge_id}` ...",
             ])
         else:
-            client = openai.Client(base_url=f"{api_url}/knowledge_base/search_engine/{search_engine}", api_key="NONE")
+            chat_endpoint = f"{api_url}/knowledge_base/search_engine/{search_engine}/chat/completions"
             chat_box.ai_say([
                 Markdown("...", in_expander=True, title="知识库匹配结果", state="running", expanded=return_direct),
                 f"正在执行 `{search_engine}` 搜索...",
             ])
 
+        payload = {
+            "model": llm_model,
+            "messages": messages,
+            "stream": True,
+            **extra_body,
+        }
+
         text = ""
         first = True
 
         try:
-            for d in client.chat.completions.create(messages=messages, model=llm_model, stream=True, extra_body=extra_body):
-                if first:
-                    docs = getattr(d, "docs", None)
-                    if docs is None and isinstance(d, list):
-                        docs = d
-                    chat_box.update_msg("\n\n".join(docs or []), element_index=0, streaming=False, state="complete")
-                    chat_box.update_msg("", streaming=False)
-                    first = False
-                    continue
-                text += d.choices[0].delta.content or ""
-                chat_box.update_msg(text.replace("\n", "\n\n"), streaming=True)
+            with httpx.Client(timeout=300) as client:
+                with client.stream("POST", chat_endpoint, json=payload) as resp:
+                    resp.raise_for_status()
+                    for line in resp.iter_lines():
+                        if not line or not line.startswith("data:"):
+                            continue
+                        data = line[len("data:"):].strip()
+                        if data == "[DONE]":
+                            break
+                        chunk = json.loads(data)
+                        if first:
+                            docs = chunk.get("docs", [])
+                            chat_box.update_msg("\n\n".join(docs), element_index=0, streaming=False, state="complete")
+                            chat_box.update_msg("", streaming=False)
+                            first = False
+                            # 第一个chunk可能同时含有content
+                            for choice in chunk.get("choices", []):
+                                text += (choice.get("delta") or {}).get("content") or ""
+                            if text:
+                                chat_box.update_msg(text.replace("\n", "\n\n"), streaming=True)
+                            continue
+                        for choice in chunk.get("choices", []):
+                            text += (choice.get("delta") or {}).get("content") or ""
+                        chat_box.update_msg(text.replace("\n", "\n\n"), streaming=True)
             chat_box.update_msg(text, streaming=False)
         except Exception as e:
-            err = getattr(e, "body", None) or str(e)
-            st.error(err)
+            st.error(str(e))
 
     now = datetime.now()
     with tabs[1]:
