@@ -11,6 +11,14 @@ if [ -f "/root/MDT/.env" ]; then
     source /root/MDT/.env
 fi
 
+# 兼容 Windows CRLF：去除环境变量值尾部可能残留的 \r
+# （.env 在 Windows 上编辑后行尾可能是 \r\n，导致变量值含 \r）
+CLOUD_API_KEY="${CLOUD_API_KEY//$'\r'/}"
+CLOUD_API_BASE_URL="${CLOUD_API_BASE_URL//$'\r'/}"
+CLOUD_LLM_MODEL="${CLOUD_LLM_MODEL//$'\r'/}"
+OLLAMA_MODELS="${OLLAMA_MODELS//$'\r'/}"
+NGROK_AUTHTOKEN="${NGROK_AUTHTOKEN//$'\r'/}"
+
 # 配置ngrok认证令牌
 if [ -n "$NGROK_AUTHTOKEN" ]; then
     echo "配置ngrok认证令牌..."
@@ -119,16 +127,57 @@ else
     echo "未找到OLLAMA_MODELS环境变量，跳过模型拉取"
 fi
 
-# 模型未全部就绪则阻塞，不启动 chatchat 和 ngrok
+# 模型未全部就绪时，尝试切换到云API冗余
 if [ "$ALL_MODELS_READY" = false ]; then
     echo ""
     echo "================================================"
-    echo "🚫 模型未全部就绪，服务启动已中止"
-    echo "   请解决上述问题后重启容器:"
-    echo "   docker compose -f docker/docker-compose.win.yaml restart chatchat"
+    echo "⚠️  Ollama模型未就绪，尝试切换到云API冗余方案..."
     echo "================================================"
-    # 保持容器运行以便查看日志，但不启动任何服务
-    tail -f /dev/null
+
+    if [ -n "$CLOUD_API_KEY" ] && [ -n "$CLOUD_API_BASE_URL" ] && [ -n "$CLOUD_LLM_MODEL" ]; then
+        echo "✅ 检测到云API配置，注入到模型配置..."
+
+        MODEL_SETTINGS_FILE="/root/mdt_data/model_settings.yaml"
+
+        # 注入云API平台到 model_settings.yaml
+        cat >> "$MODEL_SETTINGS_FILE" << YAML_EOF
+  - platform_name: cloud-api
+    platform_type: openai
+    api_base_url: ${CLOUD_API_BASE_URL}
+    api_key: ${CLOUD_API_KEY}
+    api_proxy: ''
+    api_concurrencies: 5
+    auto_detect_model: false
+    llm_models:
+      - ${CLOUD_LLM_MODEL}
+    embed_models: []
+    text2image_models: []
+    image2text_models: []
+    rerank_models: []
+    speech2text_models: []
+    text2speech_models: []
+YAML_EOF
+
+        # 切换默认模型为云端模型
+        sed -i "s/^DEFAULT_LLM_MODEL:.*/DEFAULT_LLM_MODEL: ${CLOUD_LLM_MODEL}/" "$MODEL_SETTINGS_FILE"
+
+        echo "✅ 已切换到云API: ${CLOUD_API_BASE_URL} 模型: ${CLOUD_LLM_MODEL}"
+        echo "   Embedding 仍使用 ollama��nomic-embed-text），如ollama也不可用请检查ollama服务"
+        ALL_MODELS_READY=true
+    else
+        echo "❌ 未配置云API（CLOUD_API_KEY/CLOUD_API_BASE_URL/CLOUD_LLM_MODEL），无法冗余切换"
+        echo ""
+        echo "================================================"
+        echo "🚫 模型未全部就绪，服务启动已中止"
+        echo "   解决方案："
+        echo "   方案1: 修复网络后重启: docker compose restart chatchat"
+        echo "   方案2: 在 .env 中配置云API后重启:"
+        echo "          CLOUD_API_KEY=your_key"
+        echo "          CLOUD_API_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1"
+        echo "          CLOUD_LLM_MODEL=qwen-plus"
+        echo "================================================"
+        tail -f /dev/null
+    fi
 fi
 
 # 配置目录路径

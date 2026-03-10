@@ -130,3 +130,13 @@ MODEL_PLATFORMS:
     rerank_models: []
     speech2text_models: []
     text2speech_models: []
+  # 国内云API平台（冗余备用，ollama不可用时启用）
+  # 此配置由 startup.sh 根据 CLOUD_API_KEY 环境变量动态注入，无需手动修改
+  # - platform_name: cloud-api
+  #   platform_type: openai
+  #   api_base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+  #   api_key: YOUR_API_KEY
+  #   api_concurrencies: 5
+  #   auto_detect_model: false
+  #   llm_models:
+  #     - qwen-plus
