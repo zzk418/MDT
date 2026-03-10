@@ -233,32 +233,40 @@ def kb_chat(api: ApiRequest):
         first = True
 
         try:
-            with httpx.Client(timeout=300) as client:
+            with httpx.Client(timeout=httpx.Timeout(300.0, connect=10.0)) as client:
                 with client.stream("POST", chat_endpoint, json=payload) as resp:
                     resp.raise_for_status()
-                    for line in resp.iter_lines():
-                        if not line or not line.startswith("data:"):
-                            continue
-                        data = line[len("data:"):].strip()
-                        if data == "[DONE]":
-                            break
-                        chunk = json.loads(data)
-                        if first:
-                            # 第一个chunk含docs，更新知识库匹配结果（element_index=0）
-                            docs = chunk.get("docs", [])
-                            chat_box.update_msg("\n\n".join(docs), element_index=0, streaming=False, state="complete")
-                            # 将回答占位（element_index=1）清空，准备流式填入
-                            chat_box.update_msg("", element_index=1, streaming=False)
-                            first = False
-                            # 第一个chunk可能同时含有content
+                    buf = ""
+                    for raw in resp.iter_bytes():
+                        buf += raw.decode("utf-8", errors="replace")
+                        while "\n" in buf:
+                            line, buf = buf.split("\n", 1)
+                            line = line.strip()
+                            if not line or not line.startswith("data:"):
+                                continue
+                            data = line[len("data:"):].strip()
+                            if data == "[DONE]":
+                                break
+                            try:
+                                chunk = json.loads(data)
+                            except json.JSONDecodeError:
+                                continue
+                            if first:
+                                # 第一个chunk含docs，更新知识库匹配结果（element_index=0）
+                                docs = chunk.get("docs", [])
+                                chat_box.update_msg("\n\n".join(docs), element_index=0, streaming=False, state="complete")
+                                # 将回答占位（element_index=1）清空，准备流式填入
+                                chat_box.update_msg("", element_index=1, streaming=False)
+                                first = False
+                                # 第一个chunk可能同时含有content
+                                for choice in chunk.get("choices", []):
+                                    text += (choice.get("delta") or {}).get("content") or ""
+                                if text:
+                                    chat_box.update_msg(text.replace("\n", "\n\n"), element_index=1, streaming=True)
+                                continue
                             for choice in chunk.get("choices", []):
                                 text += (choice.get("delta") or {}).get("content") or ""
-                            if text:
-                                chat_box.update_msg(text.replace("\n", "\n\n"), element_index=1, streaming=True)
-                            continue
-                        for choice in chunk.get("choices", []):
-                            text += (choice.get("delta") or {}).get("content") or ""
-                        chat_box.update_msg(text.replace("\n", "\n\n"), element_index=1, streaming=True)
+                            chat_box.update_msg(text.replace("\n", "\n\n"), element_index=1, streaming=True)
             chat_box.update_msg(text, element_index=1, streaming=False)
         except Exception as e:
             st.error(str(e))

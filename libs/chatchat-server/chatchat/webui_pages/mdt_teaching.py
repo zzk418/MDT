@@ -1368,25 +1368,33 @@ def mdt_teaching_page(api: ApiRequest, is_lite: bool = False):
             text = ""
             first = True
             try:
-                with httpx.Client(timeout=300) as hclient:
+                with httpx.Client(timeout=httpx.Timeout(300.0, connect=10.0)) as hclient:
                     with hclient.stream("POST", chat_endpoint, json=payload) as resp:
                         resp.raise_for_status()
-                        for line in resp.iter_lines():
-                            if not line or not line.startswith("data:"):
-                                continue
-                            data = line[len("data:"):].strip()
-                            if data == "[DONE]":
-                                break
-                            chunk = json.loads(data)
-                            if first:
-                                docs = chunk.get("docs", [])
-                                chat_box.update_msg("\n\n".join(docs), element_index=0, streaming=False, state="complete")
-                                chat_box.update_msg("", element_index=1, streaming=False)
-                                first = False
-                            for choice in chunk.get("choices", []):
-                                text += (choice.get("delta") or {}).get("content") or ""
-                            if not first:
-                                chat_box.update_msg(text.replace("\n", "\n\n"), element_index=1, streaming=True)
+                        buf = ""
+                        for raw in resp.iter_bytes():
+                            buf += raw.decode("utf-8", errors="replace")
+                            while "\n" in buf:
+                                line, buf = buf.split("\n", 1)
+                                line = line.strip()
+                                if not line or not line.startswith("data:"):
+                                    continue
+                                data = line[len("data:"):].strip()
+                                if data == "[DONE]":
+                                    break
+                                try:
+                                    chunk = json.loads(data)
+                                except json.JSONDecodeError:
+                                    continue
+                                if first:
+                                    docs = chunk.get("docs", [])
+                                    chat_box.update_msg("\n\n".join(docs), element_index=0, streaming=False, state="complete")
+                                    chat_box.update_msg("", element_index=1, streaming=False)
+                                    first = False
+                                for choice in chunk.get("choices", []):
+                                    text += (choice.get("delta") or {}).get("content") or ""
+                                if not first:
+                                    chat_box.update_msg(text.replace("\n", "\n\n"), element_index=1, streaming=True)
                 chat_box.update_msg(text.replace("\n", "\n\n"), element_index=1, streaming=False)
             except Exception as e:
                 st.error(str(e))
