@@ -747,8 +747,35 @@ def mdt_teaching_page(api: ApiRequest, is_lite: bool = False):
 
         st.divider()
 
-        # 模型配置
-        if st.button("⚙️ 模型配置", use_container_width=True):
+        # 模型配置（内联展示，直接可切换）
+        st.subheader("🤖 模型配置")
+        all_platforms = list(get_config_platforms())
+        # 默认优先选择 cloud-api 平台
+        default_platform_idx = next(
+            (i for i, p in enumerate(all_platforms) if p == "cloud-api"), 0
+        )
+        selected_platform = st.selectbox(
+            "模型平台",
+            all_platforms,
+            index=default_platform_idx,
+            key="platform",
+        )
+        llm_models = list(get_config_models(model_type="llm", platform_name=selected_platform))
+        # 默认使用该平台第一个模型（cloud-api 只有一个）
+        default_model = ctx.get("llm_model", get_default_llm())
+        default_model_idx = next(
+            (i for i, m in enumerate(llm_models) if m == default_model), 0
+        )
+        selected_llm = st.selectbox(
+            "LLM 模型",
+            llm_models,
+            index=default_model_idx,
+            key="llm_model",
+        )
+        ctx["llm_model"] = selected_llm
+        st.caption(f"当前: `{selected_llm}`")
+
+        if st.button("⚙️ 高级配置", use_container_width=True):
             widget_keys = ["platform", "llm_model", "temperature", "system_message"]
             chat_box.context_to_session(include=widget_keys)
             llm_model_setting()

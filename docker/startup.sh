@@ -135,34 +135,7 @@ if [ "$ALL_MODELS_READY" = false ]; then
     echo "================================================"
 
     if [ -n "$CLOUD_API_KEY" ] && [ -n "$CLOUD_API_BASE_URL" ] && [ -n "$CLOUD_LLM_MODEL" ]; then
-        echo "✅ 检测到云API配置，注入到模型配置..."
-
-        MODEL_SETTINGS_FILE="/root/mdt_data/model_settings.yaml"
-
-        # 注入云API平台到 model_settings.yaml
-        cat >> "$MODEL_SETTINGS_FILE" << YAML_EOF
-  - platform_name: cloud-api
-    platform_type: openai
-    api_base_url: ${CLOUD_API_BASE_URL}
-    api_key: ${CLOUD_API_KEY}
-    api_proxy: ''
-    api_concurrencies: 5
-    auto_detect_model: false
-    llm_models:
-      - ${CLOUD_LLM_MODEL}
-    embed_models: []
-    text2image_models: []
-    image2text_models: []
-    rerank_models: []
-    speech2text_models: []
-    text2speech_models: []
-YAML_EOF
-
-        # 切换默认模型为云端模型
-        sed -i "s/^DEFAULT_LLM_MODEL:.*/DEFAULT_LLM_MODEL: ${CLOUD_LLM_MODEL}/" "$MODEL_SETTINGS_FILE"
-
-        echo "✅ 已切换到云API: ${CLOUD_API_BASE_URL} 模型: ${CLOUD_LLM_MODEL}"
-        echo "   Embedding 仍使用 ollama��nomic-embed-text），如ollama也不可用请检查ollama服务"
+        echo "✅ 检测到云API配置，将以云API���为主模型启动..."
         ALL_MODELS_READY=true
     else
         echo "❌ 未配置云API（CLOUD_API_KEY/CLOUD_API_BASE_URL/CLOUD_LLM_MODEL），无法冗余切换"
@@ -183,13 +156,41 @@ fi
 # 配置目录路径
 cd /root/MDT/libs/chatchat-server/chatchat
 
-# 确保使用正确的模型配置
-echo "确保模型配置正确..."
+# 生成最终 model_settings.yaml（先从源文件复制，再按需注入云API和修正地址）
+echo "生成模型配置..."
+MODEL_SETTINGS_FILE="/root/mdt_data/model_settings.yaml"
 if [ -f "/root/MDT/model_settings.yaml" ]; then
-    cp -f /root/MDT/model_settings.yaml /root/mdt_data/model_settings.yaml
-    # 将 api_base_url 中的地址替换为实际 ollama 服务地址（bridge 网络下为服务名，host 网络下为 127.0.0.1）
-    sed -i "s|http://127.0.0.1:11434|http://${OLLAMA_HOST}:11434|g" /root/mdt_data/model_settings.yaml
-    echo "模型配置已更新，ollama地址: http://${OLLAMA_HOST}:11434"
+    cp -f /root/MDT/model_settings.yaml "$MODEL_SETTINGS_FILE"
+    # 修正 ollama 服务地址（bridge 网络用服务名，host 网络用 127.0.0.1）
+    sed -i "s|http://127.0.0.1:11434|http://${OLLAMA_HOST}:11434|g" "$MODEL_SETTINGS_FILE"
+    echo "基础模型配置已复制，ollama地址: http://${OLLAMA_HOST}:11434"
+fi
+
+# 注入云API平台配置（只要配了 CLOUD_API_KEY 就注入，无论 ollama 是否可用）
+if [ -n "$CLOUD_API_KEY" ] && [ -n "$CLOUD_API_BASE_URL" ] && [ -n "$CLOUD_LLM_MODEL" ]; then
+    echo "注入云API平台配置: ${CLOUD_API_BASE_URL} 模型: ${CLOUD_LLM_MODEL}"
+
+    cat >> "$MODEL_SETTINGS_FILE" << YAML_EOF
+  - platform_name: cloud-api
+    platform_type: openai
+    api_base_url: ${CLOUD_API_BASE_URL}
+    api_key: ${CLOUD_API_KEY}
+    api_proxy: ''
+    api_concurrencies: 5
+    auto_detect_model: false
+    llm_models:
+      - ${CLOUD_LLM_MODEL}
+    embed_models: []
+    text2image_models: []
+    image2text_models: []
+    rerank_models: []
+    speech2text_models: []
+    text2speech_models: []
+YAML_EOF
+
+    # 将默认模型切换为云端模型
+    sed -i "s/^DEFAULT_LLM_MODEL:.*/DEFAULT_LLM_MODEL: ${CLOUD_LLM_MODEL}/" "$MODEL_SETTINGS_FILE"
+    echo "✅ 云API注入完成，默认模型已切换为: ${CLOUD_LLM_MODEL}"
 fi
 
 # 初始化知识库
