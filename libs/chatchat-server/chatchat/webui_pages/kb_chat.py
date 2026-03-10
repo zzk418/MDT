@@ -244,20 +244,22 @@ def kb_chat(api: ApiRequest):
                             break
                         chunk = json.loads(data)
                         if first:
+                            # 第一个chunk含docs，更新知识库匹配结果（element_index=0）
                             docs = chunk.get("docs", [])
                             chat_box.update_msg("\n\n".join(docs), element_index=0, streaming=False, state="complete")
-                            chat_box.update_msg("", streaming=False)
+                            # 将回答占位（element_index=1）清空，准备流式填入
+                            chat_box.update_msg("", element_index=1, streaming=False)
                             first = False
                             # 第一个chunk可能同时含有content
                             for choice in chunk.get("choices", []):
                                 text += (choice.get("delta") or {}).get("content") or ""
                             if text:
-                                chat_box.update_msg(text.replace("\n", "\n\n"), streaming=True)
+                                chat_box.update_msg(text.replace("\n", "\n\n"), element_index=1, streaming=True)
                             continue
                         for choice in chunk.get("choices", []):
                             text += (choice.get("delta") or {}).get("content") or ""
-                        chat_box.update_msg(text.replace("\n", "\n\n"), streaming=True)
-            chat_box.update_msg(text, streaming=False)
+                        chat_box.update_msg(text.replace("\n", "\n\n"), element_index=1, streaming=True)
+            chat_box.update_msg(text, element_index=1, streaming=False)
         except Exception as e:
             st.error(str(e))
 
