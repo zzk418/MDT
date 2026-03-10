@@ -46,11 +46,9 @@ echo "生成模型配置..."
 MODEL_SETTINGS_FILE="/root/mdt_data/model_settings.yaml"
 TMP_MODEL_SETTINGS="/tmp/model_settings_gen.yaml"
 
-if [ -f "/root/MDT/model_settings.yaml" ]; then
-    cp -f /root/MDT/model_settings.yaml "$TMP_MODEL_SETTINGS"
-    echo "基础模型配置已复制到临时文件"
-elif [ -f "$MODEL_SETTINGS_FILE" ]; then
+if [ -f "$MODEL_SETTINGS_FILE" ]; then
     cp -f "$MODEL_SETTINGS_FILE" "$TMP_MODEL_SETTINGS"
+    echo "基础模型配置已复制到临时文件"
 else
     echo "❌ 找不到 model_settings.yaml，无法生成配置"
     tail -f /dev/null
