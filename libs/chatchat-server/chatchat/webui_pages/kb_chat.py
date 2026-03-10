@@ -268,6 +268,9 @@ def kb_chat(api: ApiRequest):
                                 text += (choice.get("delta") or {}).get("content") or ""
                             chat_box.update_msg(text.replace("\n", "\n\n"), element_index=1, streaming=True)
             chat_box.update_msg(text, element_index=1, streaming=False)
+        except httpx.RemoteProtocolError:
+            # 阿里云等云API在流结束时不发送标准chunked结束帧，属正常现象，内容已收到
+            chat_box.update_msg(text, element_index=1, streaming=False)
         except Exception as e:
             st.error(str(e))
 

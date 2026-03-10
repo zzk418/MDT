@@ -1396,6 +1396,9 @@ def mdt_teaching_page(api: ApiRequest, is_lite: bool = False):
                                 if not first:
                                     chat_box.update_msg(text.replace("\n", "\n\n"), element_index=1, streaming=True)
                 chat_box.update_msg(text.replace("\n", "\n\n"), element_index=1, streaming=False)
+            except httpx.RemoteProtocolError:
+                # 云API流结束时不发标准chunked结束帧，属正常现象，内容已收到
+                chat_box.update_msg(text.replace("\n", "\n\n"), element_index=1, streaming=False)
             except Exception as e:
                 st.error(str(e))
                 chat_box.update_msg(f"抱歉，处理请求时出现错误：{str(e)}", element_index=1, streaming=False)
