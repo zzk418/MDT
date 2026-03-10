@@ -2,7 +2,7 @@
 
 
 # 默认选用的 LLM 名称
-DEFAULT_LLM_MODEL: qwen3:4b-instruct-2507-q8_0
+DEFAULT_LLM_MODEL: qwen3:4b
 
 # 默认选用的 Embedding 名称
 DEFAULT_EMBEDDING_MODEL: nomic-embed-text:latest
@@ -119,7 +119,7 @@ MODEL_PLATFORMS:
     api_concurrencies: 5
     auto_detect_model: false
     llm_models:
-      - qwen3:4b-instruct-2507-q8_0
+      - qwen3:4b
       - qwen:7b
       - qwen2:7b
     embed_models:
