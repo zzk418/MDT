@@ -1,4 +1,5 @@
 @echo off
+chcp 65001 >nul
 title MDT Docker 启动
 
 :: 切换到项目根目录（bat文件所在目录的上一级）
