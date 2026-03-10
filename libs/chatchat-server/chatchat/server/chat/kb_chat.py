@@ -166,8 +166,9 @@ async def kb_chat(query: str = Body(..., description="用户输入", examples=["
                 prompt_name = "empty"
             prompt_template = get_prompt_template("rag", prompt_name)
             input_msg = History(role="user", content=prompt_template).to_msg_template(False)
+            system_msg = History(role="system", content="你是一名专业的泌尿外科肿瘤MDT多学科诊疗助手，请始终使用中文回答问题。").to_msg_template()
             chat_prompt = ChatPromptTemplate.from_messages(
-                [i.to_msg_template() for i in history] + [input_msg])
+                [system_msg] + [i.to_msg_template() for i in history] + [input_msg])
 
             chain = chat_prompt | llm
 
