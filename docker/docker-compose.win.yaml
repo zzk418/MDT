@@ -35,7 +35,7 @@ services:
     volumes:
       # 挂载代码卷：代码改动后只需 docker compose restart chatchat，无需 --build
       - ../libs/chatchat-server:/root/MDT/libs/chatchat-server
-      - ../docker/startup.sh:/root/startup.sh
+      - ./startup.sh:/root/startup.sh
       - ../model_settings.yaml:/root/MDT/model_settings.yaml
       # 持久化数据（知识库、对话记录等）
       - mdt_data:/root/mdt_data
