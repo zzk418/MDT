@@ -788,7 +788,7 @@ def init_mdt_widgets():
 
 def build_teaching_system_prompt(teaching_mode: str, selected_case: dict = None) -> str:
     """构建教学专用的系统提示词"""
-    base_prompt = """你是一位经验丰富的泌尿外科专家和医学教育者，专门从事AI+MDT诊疗教学。请根据当前教学模式提供专业、准确的医学指导。"""
+    base_prompt = """你是一位经验丰富的泌尿外科专家和医学教育者，专门从事AI+MDT诊疗教学。请根据当前教学模式提供专业、准确的医学指导。请始终使用中文回答，不得使用英文作答。"""
     
     if teaching_mode == "案例分析":
         if selected_case:
@@ -1221,9 +1221,12 @@ def mdt_teaching_page(api: ApiRequest, is_lite: bool = False):
         # 知识库关联
         st.subheader("📚 知识库关联")
         kb_list = ["不使用知识库"] + [x["kb_name"] for x in api.list_knowledge_bases()]
+        default_kb = Settings.kb_settings.DEFAULT_KNOWLEDGE_BASE
+        kb_index = kb_list.index(default_kb) if default_kb in kb_list else 0
         selected_kb = st.selectbox(
             "关联知识库",
             kb_list,
+            index=kb_index,
             key="mdt_selected_kb",
             help="选择知识库后，对话将结合知识库内容进行回答"
         )
@@ -1347,48 +1350,43 @@ def mdt_teaching_page(api: ApiRequest, is_lite: bool = False):
         use_kb = selected_kb and selected_kb != "不使用知识库"
 
         if use_kb:
-            client = openai.Client(
-                base_url=f"{api_url}/knowledge_base/local_kb/{selected_kb}",
-                api_key="NONE",
-                timeout=100000,
-                http_client=httpx.Client(trust_env=False),
-            )
+            chat_endpoint = f"{api_url}/knowledge_base/local_kb/{selected_kb}/chat/completions"
             chat_box.ai_say([
                 Markdown("...", in_expander=True, title=f"知识库「{selected_kb}」匹配结果", state="running"),
                 f"正在查询知识库 `{selected_kb}`，请稍候...",
             ])
-            extra_body = dict(
+            payload = dict(
+                messages=messages,
+                model=ctx.get("llm_model"),
+                stream=True,
                 top_k=kb_top_k,
                 score_threshold=score_threshold,
                 temperature=ctx.get("temperature"),
                 prompt_name="default",
                 return_direct=False,
             )
-            params = dict(
-                messages=messages,
-                model=ctx.get("llm_model"),
-                stream=True,
-                extra_body=extra_body,
-            )
             text = ""
-            docs_text = ""
-            started = False
+            first = True
             try:
-                for d in client.chat.completions.create(**params):
-                    metadata = {"message_id": getattr(d, "message_id", "")}
-                    if not started:
-                        chat_box.update_msg("", element_index=1, streaming=False)
-                        started = True
-                    if hasattr(d, "docs"):
-                        docs_text = d.docs
-                        chat_box.update_msg(
-                            docs_text, element_index=0, streaming=False, state="complete"
-                        )
-                    else:
-                        text += d.choices[0].delta.content or ""
-                        chat_box.update_msg(
-                            text.replace("\n", "\n\n"), element_index=1, streaming=True, metadata=metadata
-                        )
+                with httpx.Client(timeout=300) as hclient:
+                    with hclient.stream("POST", chat_endpoint, json=payload) as resp:
+                        resp.raise_for_status()
+                        for line in resp.iter_lines():
+                            if not line or not line.startswith("data:"):
+                                continue
+                            data = line[len("data:"):].strip()
+                            if data == "[DONE]":
+                                break
+                            chunk = json.loads(data)
+                            if first:
+                                docs = chunk.get("docs", [])
+                                chat_box.update_msg("\n\n".join(docs), element_index=0, streaming=False, state="complete")
+                                chat_box.update_msg("", element_index=1, streaming=False)
+                                first = False
+                            for choice in chunk.get("choices", []):
+                                text += (choice.get("delta") or {}).get("content") or ""
+                            if not first:
+                                chat_box.update_msg(text.replace("\n", "\n\n"), element_index=1, streaming=True)
                 chat_box.update_msg(text.replace("\n", "\n\n"), element_index=1, streaming=False)
             except Exception as e:
                 st.error(str(e))
