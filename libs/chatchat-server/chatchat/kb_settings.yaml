@@ -2,7 +2,7 @@
 
 
 # 默认使用的知识库
-DEFAULT_KNOWLEDGE_BASE: samples
+DEFAULT_KNOWLEDGE_BASE: MDT知识库
 
 # 默认向量库/全文检索引擎类型
 # 可选值：['faiss', 'milvus', 'zilliz', 'pg', 'es', 'relyt', 'chromadb']
@@ -44,7 +44,7 @@ PDF_OCR_THRESHOLD:
 
 # 每个知识库的初始化介绍，用于在初始化知识库时显示和Agent调用，没写则没有介绍，不会被Agent调用。
 KB_INFO:
-  samples: 关于本项目issue的解答
+  MDT知识库: 泌尿外科肿瘤MDT多学科诊疗知识库
 
 # 可选向量库类型及对应配置
 kbs_config:
