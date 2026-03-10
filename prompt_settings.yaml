@@ -9,10 +9,7 @@ preprocess_model:
 # 普通 LLM 用模板
 llm_model:
   default: '{{input}}'
-  with_history: "The following is a friendly conversation between a human and an AI.\n
-    The AI is talkative and provides lots of specific details from its context.\n
-    If the AI does not know the answer to a question, it truthfully says it does not
-    know.\n\nCurrent conversation:\n{{history}}\nHuman: {{input}}\nAI:"
+  with_history: "以下是人类与AI之间的对话。AI善于言谈，并从其上下文中提供大量具体细节。如果AI不知道某个问题的答案，它会如实说不知道。请始终使用中文回答。\n\n当前对话：\n{{history}}\n人类：{{input}}\nAI："
 
 # RAG 用模板，可用于知识库问答、文件对话、搜索引擎对话
 rag:
