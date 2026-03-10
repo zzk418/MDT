@@ -39,18 +39,27 @@ fi
 # 配置目录路径
 cd /root/MDT/libs/chatchat-server/chatchat
 
-# 生成最终 model_settings.yaml（先从源文件复制，再注入云API）
+# 生成最终 model_settings.yaml
+# 注意：model_settings.yaml 是挂载文件，sed -i 会因 Device busy 失败
+# 改为：���读取源文件到 /tmp 临时文件，修改后再 cp 覆盖（cp 只覆盖内容，不重命名）
 echo "生成模型配置..."
 MODEL_SETTINGS_FILE="/root/mdt_data/model_settings.yaml"
+TMP_MODEL_SETTINGS="/tmp/model_settings_gen.yaml"
+
 if [ -f "/root/MDT/model_settings.yaml" ]; then
-    cp -f /root/MDT/model_settings.yaml "$MODEL_SETTINGS_FILE"
-    echo "基础模型配置已复制"
+    cp -f /root/MDT/model_settings.yaml "$TMP_MODEL_SETTINGS"
+    echo "基础模型配置已复制到临时文件"
+elif [ -f "$MODEL_SETTINGS_FILE" ]; then
+    cp -f "$MODEL_SETTINGS_FILE" "$TMP_MODEL_SETTINGS"
+else
+    echo "❌ 找不到 model_settings.yaml，无法生成配置"
+    tail -f /dev/null
 fi
 
 # 注入云API平台配置
 echo "注入云API平台配置: ${CLOUD_API_BASE_URL} 模型: ${CLOUD_LLM_MODEL}"
 
-cat >> "$MODEL_SETTINGS_FILE" << YAML_EOF
+cat >> "$TMP_MODEL_SETTINGS" << YAML_EOF
   - platform_name: cloud-api
     platform_type: openai
     api_base_url: ${CLOUD_API_BASE_URL}
@@ -68,8 +77,11 @@ cat >> "$MODEL_SETTINGS_FILE" << YAML_EOF
     text2speech_models: []
 YAML_EOF
 
-# 将默认模型切换为云端模型
-sed -i "s/^DEFAULT_LLM_MODEL:.*/DEFAULT_LLM_MODEL: ${CLOUD_LLM_MODEL}/" "$MODEL_SETTINGS_FILE"
+# 将默认模型切换为云端模型（在临时文件上操作，sed -i 在 /tmp 下正常工作）
+sed -i "s/^DEFAULT_LLM_MODEL:.*/DEFAULT_LLM_MODEL: ${CLOUD_LLM_MODEL}/" "$TMP_MODEL_SETTINGS"
+
+# cp 覆盖挂载文件内容（不会触发 Device busy）
+cp -f "$TMP_MODEL_SETTINGS" "$MODEL_SETTINGS_FILE"
 echo "✅ 云API注入完成，默认模型已切换为: ${CLOUD_LLM_MODEL}"
 
 # 初始化知识库
