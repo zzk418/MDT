@@ -1,4 +1,4 @@
-![](docs/img/logo-long-chatchat-trans-v2.png)
+![MDT 多学科诊疗教学平台](docs/img/mdt_logo_long.png)
 <a href="https://trendshift.io/repositories/329" target="_blank"><img src="https://trendshift.io/api/badge/repositories/329" alt="chatchat-space%2FLangchain-Chatchat | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
 
 [![pypi badge](https://img.shields.io/pypi/v/langchain-chatchat.svg)](https://shields.io/)
