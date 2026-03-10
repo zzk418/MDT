@@ -22,16 +22,12 @@ services:
       context: ../
       dockerfile: docker/Dockerfile
     restart: always
-    depends_on:
-      - ollama
     environment:
       - NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN}
-      - OLLAMA_MODELS=${OLLAMA_MODELS}
-      - OLLAMA_HOST=ollama
-      # 国内云API冗余配置（留空则只用ollama）
-      - CLOUD_API_KEY=${CLOUD_API_KEY:-}
-      - CLOUD_API_BASE_URL=${CLOUD_API_BASE_URL:-}
-      - CLOUD_LLM_MODEL=${CLOUD_LLM_MODEL:-}
+      # 云API配置（必填，直接使用云模型）
+      - CLOUD_API_KEY=${CLOUD_API_KEY}
+      - CLOUD_API_BASE_URL=${CLOUD_API_BASE_URL}
+      - CLOUD_LLM_MODEL=${CLOUD_LLM_MODEL}
     volumes:
       # 持久化其余数据（对话记录、临时文件等），先挂载命名卷作为基础
       - mdt_data:/root/mdt_data

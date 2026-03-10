@@ -16,7 +16,6 @@ fi
 CLOUD_API_KEY="${CLOUD_API_KEY//$'\r'/}"
 CLOUD_API_BASE_URL="${CLOUD_API_BASE_URL//$'\r'/}"
 CLOUD_LLM_MODEL="${CLOUD_LLM_MODEL//$'\r'/}"
-OLLAMA_MODELS="${OLLAMA_MODELS//$'\r'/}"
 NGROK_AUTHTOKEN="${NGROK_AUTHTOKEN//$'\r'/}"
 
 # 配置ngrok认证令牌
@@ -25,152 +24,33 @@ if [ -n "$NGROK_AUTHTOKEN" ]; then
     ngrok config add-authtoken $NGROK_AUTHTOKEN
 fi
 
-# 等待ollama服务启动
-echo "等待ollama服务启动..."
-# 支持跨平台：Linux host 模式用 localhost，Windows bridge 模式用服务名
-OLLAMA_HOST="${OLLAMA_HOST:-localhost}"
-# 等待ollama服务完全启动，检查API是否可用
-OLLAMA_READY=false
-for i in {1..30}; do
-    if curl -s http://${OLLAMA_HOST}:11434/api/tags > /dev/null 2>&1; then
-        echo "Ollama服务已启动"
-        OLLAMA_READY=true
-        break
-    fi
-    echo "等待Ollama服务启动... ($i/30)"
-    sleep 2
-done
-
-if [ "$OLLAMA_READY" = false ]; then
-    echo "警告: Ollama服务在60秒内未启动，模型拉取可能会失败"
-fi
-
-# 通过 /api/tags 接口查询模型是否已在 ollama 中存在
-model_exists() {
-    local model="$1"
-    # 取 name 字段（格式为 "model:tag"），精确匹配
-    curl -s "http://${OLLAMA_HOST}:11434/api/tags" \
-        | grep -o '"name":"[^"]*"' \
-        | grep -q "\"name\":\"${model}\""
-}
-
-# 拉取Ollama模型（chatchat容器内没有ollama命令，只能用curl HTTP API）
-# 所有模型必须拉取成功，否则阻塞不继续启动后续服务
-ALL_MODELS_READY=true
-
-if [ -n "$OLLAMA_MODELS" ]; then
-    echo "开始拉取Ollama模型: $OLLAMA_MODELS"
-    IFS=',' read -ra MODELS <<< "$OLLAMA_MODELS"
-
-    if [ "$OLLAMA_READY" = true ]; then
-        for model in "${MODELS[@]}"; do
-            model="$(echo "$model" | tr -d '[:space:]')"
-
-            # 先查 /api/tags 确认是否已存在，避免重复拉取
-            if model_exists "$model"; then
-                echo "模型 $model 已存在，跳过拉取"
-                continue
-            fi
-
-            echo "================================================"
-            echo "开始拉取模型: $model"
-            echo "（大模型文件较大，请耐心等待，实时进度如下）"
-            echo "================================================"
-
-            MAX_RETRIES=3
-            RETRY_COUNT=0
-            SUCCESS=false
-
-            while [ $RETRY_COUNT -lt $MAX_RETRIES ] && [ "$SUCCESS" = false ]; do
-                echo ">>> 尝试 $((RETRY_COUNT+1))/$MAX_RETRIES ..."
-
-                # 流式拉取，实时输出进度到终端
-                curl -s -X POST "http://${OLLAMA_HOST}:11434/api/pull" \
-                    -H "Content-Type: application/json" \
-                    -d "{\"name\": \"$model\", \"stream\": true}" \
-                    --no-buffer \
-                    --max-time 3600
-
-                # 拉取结束后，查 /api/tags 真实验证
-                echo ""
-                if model_exists "$model"; then
-                    echo "✅ 模型 $model 拉取并验证成功（已在 /api/tags 中确认）"
-                    SUCCESS=true
-                else
-                    echo "❌ 拉取结束但 /api/tags 中未找到 $model（可能tag不存在或下载不完整）"
-                    RETRY_COUNT=$((RETRY_COUNT+1))
-                    if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
-                        echo "等待15秒后重试..."
-                        sleep 15
-                    fi
-                fi
-            done
-
-            if [ "$SUCCESS" = false ]; then
-                echo "================================================"
-                echo "❌ 错误: 模型 $model 拉取失败，已重试 $MAX_RETRIES 次"
-                echo "    请检查:"
-                echo "    1. 模型名称是否正确（当前: $model）"
-                echo "    2. 宿主机代理是否开启（需监听7890端口并允许局域网连接）"
-                echo "    3. 网络连接是否正常"
-                echo "    修复后重启容器: docker compose restart chatchat"
-                echo "================================================"
-                ALL_MODELS_READY=false
-            fi
-        done
-        echo "模型拉取阶段完成"
-    else
-        echo "❌ 错误: Ollama服务未就绪，无法拉取模型，中止启动"
-        ALL_MODELS_READY=false
-    fi
+# 校验云API配置
+echo "检查云API配置..."
+if [ -n "$CLOUD_API_KEY" ] && [ -n "$CLOUD_API_BASE_URL" ] && [ -n "$CLOUD_LLM_MODEL" ]; then
+    echo "✅ 云API配置已就绪: ${CLOUD_API_BASE_URL} 模型: ${CLOUD_LLM_MODEL}"
 else
-    echo "未找到OLLAMA_MODELS环境变量，跳过模型拉取"
-fi
-
-# 模型未全部就绪时，尝试切换到云API冗余
-if [ "$ALL_MODELS_READY" = false ]; then
-    echo ""
-    echo "================================================"
-    echo "⚠️  Ollama模型未就绪，尝试切换到云API冗余方案..."
-    echo "================================================"
-
-    if [ -n "$CLOUD_API_KEY" ] && [ -n "$CLOUD_API_BASE_URL" ] && [ -n "$CLOUD_LLM_MODEL" ]; then
-        echo "✅ 检测到云API配置，将以云API���为主模型启动..."
-        ALL_MODELS_READY=true
-    else
-        echo "❌ 未配置云API（CLOUD_API_KEY/CLOUD_API_BASE_URL/CLOUD_LLM_MODEL），无法冗余切换"
-        echo ""
-        echo "================================================"
-        echo "🚫 模型未全部就绪，服务启动已中止"
-        echo "   解决方案："
-        echo "   方案1: 修复网络后重启: docker compose restart chatchat"
-        echo "   方案2: 在 .env 中配置云API后重启:"
-        echo "          CLOUD_API_KEY=your_key"
-        echo "          CLOUD_API_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1"
-        echo "          CLOUD_LLM_MODEL=qwen-plus"
-        echo "================================================"
-        tail -f /dev/null
-    fi
+    echo "❌ 未配置云API，请在 .env 中设置以下变量后重启:"
+    echo "   CLOUD_API_KEY=your_key"
+    echo "   CLOUD_API_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1"
+    echo "   CLOUD_LLM_MODEL=qwen-plus"
+    tail -f /dev/null
 fi
 
 # 配置目录路径
 cd /root/MDT/libs/chatchat-server/chatchat
 
-# 生成最终 model_settings.yaml（先从源文件复制，再按需注入云API和修正地址）
+# 生成最终 model_settings.yaml（先从源文件复制，再注入云API）
 echo "生成模型配置..."
 MODEL_SETTINGS_FILE="/root/mdt_data/model_settings.yaml"
 if [ -f "/root/MDT/model_settings.yaml" ]; then
     cp -f /root/MDT/model_settings.yaml "$MODEL_SETTINGS_FILE"
-    # 修正 ollama 服务地址（bridge 网络用服务名，host 网络用 127.0.0.1）
-    sed -i "s|http://127.0.0.1:11434|http://${OLLAMA_HOST}:11434|g" "$MODEL_SETTINGS_FILE"
-    echo "基础模型配置已复制，ollama地址: http://${OLLAMA_HOST}:11434"
+    echo "基础模型配置已复制"
 fi
 
-# 注入云API平台配置（只要配了 CLOUD_API_KEY 就注入，无论 ollama 是否可用）
-if [ -n "$CLOUD_API_KEY" ] && [ -n "$CLOUD_API_BASE_URL" ] && [ -n "$CLOUD_LLM_MODEL" ]; then
-    echo "注入云API平台配置: ${CLOUD_API_BASE_URL} 模型: ${CLOUD_LLM_MODEL}"
+# 注入云API平台配置
+echo "注入云API平台配置: ${CLOUD_API_BASE_URL} 模型: ${CLOUD_LLM_MODEL}"
 
-    cat >> "$MODEL_SETTINGS_FILE" << YAML_EOF
+cat >> "$MODEL_SETTINGS_FILE" << YAML_EOF
   - platform_name: cloud-api
     platform_type: openai
     api_base_url: ${CLOUD_API_BASE_URL}
@@ -188,10 +68,9 @@ if [ -n "$CLOUD_API_KEY" ] && [ -n "$CLOUD_API_BASE_URL" ] && [ -n "$CLOUD_LLM_M
     text2speech_models: []
 YAML_EOF
 
-    # 将默认模型切换为云端模型
-    sed -i "s/^DEFAULT_LLM_MODEL:.*/DEFAULT_LLM_MODEL: ${CLOUD_LLM_MODEL}/" "$MODEL_SETTINGS_FILE"
-    echo "✅ 云API注入完成，默认模型已切换为: ${CLOUD_LLM_MODEL}"
-fi
+# 将默认模型切换为云端模型
+sed -i "s/^DEFAULT_LLM_MODEL:.*/DEFAULT_LLM_MODEL: ${CLOUD_LLM_MODEL}/" "$MODEL_SETTINGS_FILE"
+echo "✅ 云API注入完成，默认模型已切换为: ${CLOUD_LLM_MODEL}"
 
 # 初始化知识库
 echo "运行 chatchat kb -r..."
@@ -237,38 +116,37 @@ NGROK_URL=""
 
 while [ $RETRY_COUNT -lt $MAX_RETRIES ] && [ -z "$NGROK_URL" ]; do
     echo "尝试获取ngrok公网URL (尝试 $((RETRY_COUNT+1))/$MAX_RETRIES)..."
-    
+
     # 从ngrok API获取隧道信息
     TUNNEL_INFO=$(curl -s http://localhost:4040/api/tunnels 2>/dev/null)
-    
+
     if [ $? -eq 0 ] && [ -n "$TUNNEL_INFO" ]; then
         # 解析JSON获取公网URL
         NGROK_URL=$(echo $TUNNEL_INFO | grep -o '"public_url":"[^"]*"' | head -1 | cut -d'"' -f4)
-        
+
         if [ -n "$NGROK_URL" ]; then
             echo "================================================"
             echo "✅ ngrok公网URL获取成功:"
             echo "   $NGROK_URL"
             echo "================================================"
-            
+
             # 将URL保存到文件
             echo $NGROK_URL > $NGROK_URL_FILE
             echo "URL已保存到: $NGROK_URL_FILE"
-            
+
             # 创建方便的访问链接文件
             echo "📎 快速访问链接:" > /tmp/ngrok_access.txt
             echo "WebUI: $NGROK_URL" >> /tmp/ngrok_access.txt
-            echo "Ollama API: http://localhost:11434" >> /tmp/ngrok_access.txt
             echo "Ngrok管理界面: http://localhost:4040" >> /tmp/ngrok_access.txt
             echo "" >> /tmp/ngrok_access.txt
             echo "📋 复制以下命令查看实时日志:" >> /tmp/ngrok_access.txt
             echo "tail -f /tmp/ngrok.log" >> /tmp/ngrok_access.txt
-            
+
             cat /tmp/ngrok_access.txt
             break
         fi
     fi
-    
+
     RETRY_COUNT=$((RETRY_COUNT+1))
     sleep 3
 done
@@ -277,7 +155,6 @@ if [ -z "$NGROK_URL" ]; then
     echo "⚠️  无法获取ngrok公网URL，请检查ngrok日志: /tmp/ngrok.log"
     echo "您仍然可以通过以下方式访问服务:"
     echo "  - 本地WebUI: http://localhost:8501"
-    echo "  - Ollama API: http://localhost:11434"
 fi
 
 echo ""
@@ -289,7 +166,7 @@ echo "🔄 服务运行中..."
 while true; do
     # 每30秒检查一次ngrok状态
     sleep 30
-    
+
     # 检查ngrok进程是否还在运行
     if ! kill -0 $NGROK_PID 2>/dev/null; then
         echo "❌ ngrok进程已停止，尝试重新启动..."
@@ -298,10 +175,10 @@ while true; do
         echo "ngrok已重新启动，进程ID: $NGROK_PID"
         sleep 5
     fi
-    
+
     # 显示当前时间和服务状态
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] 服务运行正常 | 本地WebUI: http://localhost:8501 | Ollama: http://localhost:11434"
-    
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] 服务运行正常 | 本地WebUI: http://localhost:8501"
+
     # 如果之前获取到了URL，也显示公网URL
     if [ -f "$NGROK_URL_FILE" ] && [ -s "$NGROK_URL_FILE" ]; then
         CURRENT_URL=$(cat $NGROK_URL_FILE)
