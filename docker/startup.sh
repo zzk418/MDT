@@ -19,10 +19,12 @@ fi
 
 # 等待ollama服务启动
 echo "等待ollama服务启动..."
+# 支持跨平台：Linux host 模式用 localhost，Windows bridge 模式用服务名
+OLLAMA_HOST="${OLLAMA_HOST:-localhost}"
 # 等待ollama服务完全启动，检查API是否可用
 OLLAMA_READY=false
 for i in {1..30}; do
-    if curl -s http://localhost:11434/api/tags > /dev/null 2>&1; then
+    if curl -s http://${OLLAMA_HOST}:11434/api/tags > /dev/null 2>&1; then
         echo "Ollama服务已启动"
         OLLAMA_READY=true
         break
@@ -43,43 +45,40 @@ if [ -n "$OLLAMA_MODELS" ]; then
     # 检查Ollama服务是否就绪
     if [ "$OLLAMA_READY" = true ]; then
         for model in "${MODELS[@]}"; do
+            model="$(echo "$model" | tr -d '[:space:]')"
             echo "拉取模型: $model"
-            # 使用curl调用API拉取模型，设置超时和重试
             MAX_RETRIES=3
             RETRY_COUNT=0
             SUCCESS=false
-            
+
             while [ $RETRY_COUNT -lt $MAX_RETRIES ] && [ "$SUCCESS" = false ]; do
                 echo "尝试拉取模型 $model (尝试 $((RETRY_COUNT+1))/$MAX_RETRIES)..."
-                
-                # 使用curl调用Ollama API拉取模型
-                # 注意：Ollama的pull API是流式响应，我们使用timeout和显示进度
-                RESPONSE=$(curl -s -X POST http://localhost:11434/api/pull \
+
+                # 实时流式输出拉取进度，同时 tee 到临时文件用于判断最终状态
+                PULL_LOG="/tmp/pull_${RETRY_COUNT}.log"
+                curl -s -X POST http://${OLLAMA_HOST}:11434/api/pull \
                     -H "Content-Type: application/json" \
                     -d "{\"name\": \"$model\"}" \
-                    --max-time 300 2>&1)  # 5分钟超时
-                
-                if [ $? -eq 0 ]; then
+                    --no-buffer \
+                    --max-time 1800 | tee "$PULL_LOG"
+
+                # 检查最后一行是否包含 "success"
+                if grep -q '"status":"success"' "$PULL_LOG" 2>/dev/null; then
                     echo "模型 $model 拉取成功"
                     SUCCESS=true
                 else
-                    echo "模型 $model 拉取失败: $RESPONSE"
+                    echo "模型 $model 拉取失败或未完成"
                     RETRY_COUNT=$((RETRY_COUNT+1))
                     if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
                         echo "等待10秒后重试..."
                         sleep 10
                     fi
                 fi
+                rm -f "$PULL_LOG"
             done
-            
+
             if [ "$SUCCESS" = false ]; then
                 echo "警告: 模型 $model 拉取失败，已达到最大重试次数"
-            fi
-            
-            # 在模型之间添加短暂延迟
-            if [ "$model" != "${MODELS[-1]}" ]; then
-                echo "等待5秒后拉取下一个模型..."
-                sleep 5
             fi
         done
         echo "模型拉取完成"
@@ -97,7 +96,9 @@ cd /root/MDT/libs/chatchat-server/chatchat
 echo "确保模型配置正确..."
 if [ -f "/root/MDT/model_settings.yaml" ]; then
     cp -f /root/MDT/model_settings.yaml /root/mdt_data/model_settings.yaml
-    echo "模型配置已更新为qwen3:4b-instruct-2507-q8_0和nomic-embed-text:latest"
+    # 将 api_base_url 中的地址替换为实际 ollama 服务地址（bridge 网络下为服务名，host 网络下为 127.0.0.1）
+    sed -i "s|http://127.0.0.1:11434|http://${OLLAMA_HOST}:11434|g" /root/mdt_data/model_settings.yaml
+    echo "模型配置已更新，ollama地址: http://${OLLAMA_HOST}:11434"
 fi
 
 # 初始化知识库
