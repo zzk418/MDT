@@ -47,6 +47,9 @@ model_exists() {
 }
 
 # 拉取Ollama模型（chatchat容器内没有ollama命令，只能用curl HTTP API）
+# 所有模型必须拉取成功，否则阻塞不继续启动后续服务
+ALL_MODELS_READY=true
+
 if [ -n "$OLLAMA_MODELS" ]; then
     echo "开始拉取Ollama模型: $OLLAMA_MODELS"
     IFS=',' read -ra MODELS <<< "$OLLAMA_MODELS"
@@ -97,18 +100,35 @@ if [ -n "$OLLAMA_MODELS" ]; then
 
             if [ "$SUCCESS" = false ]; then
                 echo "================================================"
-                echo "⚠️  警告: 模型 $model 拉取失败，已重试 $MAX_RETRIES 次"
-                echo "    请检查模型名称是否正确（可在 .env 中修改 OLLAMA_MODELS）"
-                echo "    服务将继续启动，但该模型不可用"
+                echo "❌ 错误: 模型 $model 拉取失败，已重试 $MAX_RETRIES 次"
+                echo "    请检查:"
+                echo "    1. 模型名称是否正确（当前: $model）"
+                echo "    2. 宿主机代理是否开启（需监听7890端口并允许局域网连接）"
+                echo "    3. 网络连接是否正常"
+                echo "    修复后重启容器: docker compose restart chatchat"
                 echo "================================================"
+                ALL_MODELS_READY=false
             fi
         done
         echo "模型拉取阶段完成"
     else
-        echo "警告: Ollama服务未就绪，跳过模型拉取"
+        echo "❌ 错误: Ollama服务未就绪，无法拉取模型，中止启动"
+        ALL_MODELS_READY=false
     fi
 else
     echo "未找到OLLAMA_MODELS环境变量，跳过模型拉取"
+fi
+
+# 模型未全部就绪则阻塞，不启动 chatchat 和 ngrok
+if [ "$ALL_MODELS_READY" = false ]; then
+    echo ""
+    echo "================================================"
+    echo "🚫 模型未全部就绪，服务启动已中止"
+    echo "   请解决上述问题后重启容器:"
+    echo "   docker compose -f docker/docker-compose.win.yaml restart chatchat"
+    echo "================================================"
+    # 保持容器运行以便查看日志，但不启动任何服务
+    tail -f /dev/null
 fi
 
 # 配置目录路径
