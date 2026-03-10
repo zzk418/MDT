@@ -37,10 +37,16 @@ if [ "$OLLAMA_READY" = false ]; then
     echo "警告: Ollama服务在60秒内未启动，模型拉取可能会失败"
 fi
 
-# 拉取Ollama模型
-# 使用 OLLAMA_HOST 环境变量让 ollama 命令连接到正确的服务
-export OLLAMA_HOST="http://${OLLAMA_HOST}:11434"
+# 通过 /api/tags 接口查询模型是否已在 ollama 中存在
+model_exists() {
+    local model="$1"
+    # 取 name 字段（格式为 "model:tag"），精确匹配
+    curl -s "http://${OLLAMA_HOST}:11434/api/tags" \
+        | grep -o '"name":"[^"]*"' \
+        | grep -q "\"name\":\"${model}\""
+}
 
+# 拉取Ollama模型（chatchat容器内没有ollama命令，只能用curl HTTP API）
 if [ -n "$OLLAMA_MODELS" ]; then
     echo "开始拉取Ollama模型: $OLLAMA_MODELS"
     IFS=',' read -ra MODELS <<< "$OLLAMA_MODELS"
@@ -49,8 +55,8 @@ if [ -n "$OLLAMA_MODELS" ]; then
         for model in "${MODELS[@]}"; do
             model="$(echo "$model" | tr -d '[:space:]')"
 
-            # 先检查模型是否已存在，避免重复拉取
-            if ollama list 2>/dev/null | grep -q "^${model}"; then
+            # 先查 /api/tags 确认是否已存在，避免重复拉取
+            if model_exists "$model"; then
                 echo "模型 $model 已存在，跳过拉取"
                 continue
             fi
@@ -67,19 +73,20 @@ if [ -n "$OLLAMA_MODELS" ]; then
             while [ $RETRY_COUNT -lt $MAX_RETRIES ] && [ "$SUCCESS" = false ]; do
                 echo ">>> 尝试 $((RETRY_COUNT+1))/$MAX_RETRIES ..."
 
-                # 用 ollama pull 拉取，实时输出进度
-                if ollama pull "$model"; then
-                    # 用 ollama list 真实验证模型是否在本地存在
-                    if ollama list 2>/dev/null | grep -q "^${model}"; then
-                        echo "✅ 模型 $model 拉取并验证成功"
-                        SUCCESS=true
-                    else
-                        echo "❌ pull 命令返回成功，但 ollama list 中未找到 $model，可能拉取不完整"
-                        RETRY_COUNT=$((RETRY_COUNT+1))
-                        sleep 5
-                    fi
+                # 流式拉取，实时输出进度到终端
+                curl -s -X POST "http://${OLLAMA_HOST}:11434/api/pull" \
+                    -H "Content-Type: application/json" \
+                    -d "{\"name\": \"$model\", \"stream\": true}" \
+                    --no-buffer \
+                    --max-time 3600
+
+                # 拉取结束后，查 /api/tags 真实验证
+                echo ""
+                if model_exists "$model"; then
+                    echo "✅ 模型 $model 拉取并验证成功（已在 /api/tags 中确认）"
+                    SUCCESS=true
                 else
-                    echo "❌ 模型 $model 拉取失败（exit code: $?）"
+                    echo "❌ 拉取结束但 /api/tags 中未找到 $model（可能tag不存在或下载不完整）"
                     RETRY_COUNT=$((RETRY_COUNT+1))
                     if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
                         echo "等待15秒后重试..."
@@ -91,8 +98,8 @@ if [ -n "$OLLAMA_MODELS" ]; then
             if [ "$SUCCESS" = false ]; then
                 echo "================================================"
                 echo "⚠️  警告: 模型 $model 拉取失败，已重试 $MAX_RETRIES 次"
+                echo "    请检查模型名称是否正确（可在 .env 中修改 OLLAMA_MODELS）"
                 echo "    服务将继续启动，但该模型不可用"
-                echo "    可稍后手动执行: ollama pull $model"
                 echo "================================================"
             fi
         done
