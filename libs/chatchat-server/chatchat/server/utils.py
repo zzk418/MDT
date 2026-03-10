@@ -376,6 +376,9 @@ def get_Embeddings(
                 openai_proxy=model_info.get("api_proxy"),
             )
         if model_info.get("platform_type") == "openai":
+            # 阿里云 dashscope 不接受 tiktoken 分词后的 token 列表，需禁用
+            if "dashscope" in (model_info.get("api_base_url") or ""):
+                params["tiktoken_enabled"] = False
             return OpenAIEmbeddings(**params)
         elif model_info.get("platform_type") == "ollama":
             return OllamaEmbeddings(
@@ -392,7 +395,7 @@ def get_Embeddings(
         else:
             return LocalAIEmbeddings(**params)
     except Exception as e:
-        logger.exception(f"failed to create Embeddings for model: {embed_model}.")
+        logger.exception(f"failed to create Embeddings for model: {embed_model}: " + repr(e))
         raise e
 
 
