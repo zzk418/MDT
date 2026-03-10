@@ -38,50 +38,65 @@ if [ "$OLLAMA_READY" = false ]; then
 fi
 
 # 拉取Ollama模型
+# 使用 OLLAMA_HOST 环境变量让 ollama 命令连接到正确的服务
+export OLLAMA_HOST="http://${OLLAMA_HOST}:11434"
+
 if [ -n "$OLLAMA_MODELS" ]; then
     echo "开始拉取Ollama模型: $OLLAMA_MODELS"
     IFS=',' read -ra MODELS <<< "$OLLAMA_MODELS"
-    
-    # 检查Ollama服务是否就绪
+
     if [ "$OLLAMA_READY" = true ]; then
         for model in "${MODELS[@]}"; do
             model="$(echo "$model" | tr -d '[:space:]')"
-            echo "拉取模型: $model"
+
+            # 先检查模型是否已存在，避免重复拉取
+            if ollama list 2>/dev/null | grep -q "^${model}"; then
+                echo "模型 $model 已存在，跳过拉取"
+                continue
+            fi
+
+            echo "================================================"
+            echo "开始拉取模型: $model"
+            echo "（大模型文件较大，请耐心等待，实时进度如下）"
+            echo "================================================"
+
             MAX_RETRIES=3
             RETRY_COUNT=0
             SUCCESS=false
 
             while [ $RETRY_COUNT -lt $MAX_RETRIES ] && [ "$SUCCESS" = false ]; do
-                echo "尝试拉取模型 $model (尝试 $((RETRY_COUNT+1))/$MAX_RETRIES)..."
+                echo ">>> 尝试 $((RETRY_COUNT+1))/$MAX_RETRIES ..."
 
-                # 实时流式输出拉取进度，同时 tee 到临时文件用于判断最终状态
-                PULL_LOG="/tmp/pull_${RETRY_COUNT}.log"
-                curl -s -X POST http://${OLLAMA_HOST}:11434/api/pull \
-                    -H "Content-Type: application/json" \
-                    -d "{\"name\": \"$model\"}" \
-                    --no-buffer \
-                    --max-time 1800 | tee "$PULL_LOG"
-
-                # 检查最后一行是否包含 "success"
-                if grep -q '"status":"success"' "$PULL_LOG" 2>/dev/null; then
-                    echo "模型 $model 拉取成功"
-                    SUCCESS=true
+                # 用 ollama pull 拉取，实时输出进度
+                if ollama pull "$model"; then
+                    # 用 ollama list 真实验证模型是否在本地存在
+                    if ollama list 2>/dev/null | grep -q "^${model}"; then
+                        echo "✅ 模型 $model 拉取并验证成功"
+                        SUCCESS=true
+                    else
+                        echo "❌ pull 命令返回成功，但 ollama list 中未找到 $model，可能拉取不完整"
+                        RETRY_COUNT=$((RETRY_COUNT+1))
+                        sleep 5
+                    fi
                 else
-                    echo "模型 $model 拉取失败或未完成"
+                    echo "❌ 模型 $model 拉取失败（exit code: $?）"
                     RETRY_COUNT=$((RETRY_COUNT+1))
                     if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
-                        echo "等待10秒后重试..."
-                        sleep 10
+                        echo "等待15秒后重试..."
+                        sleep 15
                     fi
                 fi
-                rm -f "$PULL_LOG"
             done
 
             if [ "$SUCCESS" = false ]; then
-                echo "警告: 模型 $model 拉取失败，已达到最大重试次数"
+                echo "================================================"
+                echo "⚠️  警告: 模型 $model 拉取失败，已重试 $MAX_RETRIES 次"
+                echo "    服务将继续启动，但该模型不可用"
+                echo "    可稍后手动执行: ollama pull $model"
+                echo "================================================"
             fi
         done
-        echo "模型拉取完成"
+        echo "模型拉取阶段完成"
     else
         echo "警告: Ollama服务未就绪，跳过模型拉取"
     fi

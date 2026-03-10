@@ -5,6 +5,13 @@ services:
     restart: always
     volumes:
       - ~/.ollama:/root/.ollama
+    environment:
+      # 可选：填写代理地址加速模型拉取，如 http://host.docker.internal:7890
+      # 留空则不使用代理
+      - HTTPS_PROXY=${OLLAMA_HTTPS_PROXY:-}
+      - HTTP_PROXY=${OLLAMA_HTTPS_PROXY:-}
+      # HuggingFace 镜像加速（ollama部分模型从HF拉取）
+      - HF_ENDPOINT=https://hf-mirror.com
     deploy:
       resources:
         reservations:
