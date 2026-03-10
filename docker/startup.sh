@@ -69,7 +69,8 @@ cat >> "$TMP_MODEL_SETTINGS" << YAML_EOF
     auto_detect_model: false
     llm_models:
       - ${CLOUD_LLM_MODEL}
-    embed_models: []
+    embed_models:
+      - ${CLOUD_EMBED_MODEL:-text-embedding-v3}
     text2image_models: []
     image2text_models: []
     rerank_models: []
@@ -79,6 +80,8 @@ YAML_EOF
 
 # 将默认模型切换为云端模型（在临时文件上操作，sed -i 在 /tmp 下正常工作）
 sed -i "s/^DEFAULT_LLM_MODEL:.*/DEFAULT_LLM_MODEL: ${CLOUD_LLM_MODEL}/" "$TMP_MODEL_SETTINGS"
+EMBED_MODEL="${CLOUD_EMBED_MODEL:-text-embedding-v3}"
+sed -i "s/^DEFAULT_EMBEDDING_MODEL:.*/DEFAULT_EMBEDDING_MODEL: ${EMBED_MODEL}/" "$TMP_MODEL_SETTINGS"
 
 # cp 覆盖挂载文件内容（不会触发 Device busy）
 cp -f "$TMP_MODEL_SETTINGS" "$MODEL_SETTINGS_FILE"
