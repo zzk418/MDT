@@ -29,13 +29,26 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
-echo [OK] Docker 已就绪，开始构建并启动服务...
+echo [OK] Docker 已就绪，检查镜像...
 echo.
 
-docker compose -f docker\docker-compose.win.yaml --env-file .env up --build
+:: 检查镜像是否已存在
+docker image inspect mdt-chatchat >nul 2>&1
+if %errorlevel% equ 0 (
+    echo [OK] 镜像已存在，直接启动容器（跳过构建）...
+    echo      如需重新构建，请运行 scripts\rebuild_docker.bat
+    echo.
+    docker compose -f docker\docker-compose.win.yaml --env-file .env up -d
+) else (
+    echo [INFO] 首次运行，开始构建镜像（约需几分钟）...
+    echo.
+    docker compose -f docker\docker-compose.win.yaml --env-file .env up --build -d
+)
 
 echo.
 echo ============================================
-echo   服务已退出。
+echo   服务已在后台启动，关闭此窗口不影响运行。
+echo   查看日志: docker compose -f docker\docker-compose.win.yaml logs -f
+echo   停止服务: docker compose -f docker\docker-compose.win.yaml down
 echo ============================================
 pause
