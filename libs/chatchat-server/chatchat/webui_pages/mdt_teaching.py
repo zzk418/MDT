@@ -782,6 +782,7 @@ def init_mdt_widgets():
     st.session_state.setdefault("teaching_mode", "案例分析")
     st.session_state.setdefault("assessment_scores", {})
     st.session_state.setdefault("discussion_records", [])
+    st.session_state.setdefault("mdt_selected_kb", Settings.kb_settings.DEFAULT_KNOWLEDGE_BASE)
     st.session_state.setdefault("cur_conv_name", chat_box.cur_chat_name)
     st.session_state.setdefault("last_conv_name", chat_box.cur_chat_name)
 
@@ -1120,6 +1121,15 @@ def mdt_teaching_page(api: ApiRequest, is_lite: bool = False):
     ctx.setdefault("uid", uuid.uuid4().hex)
     ctx.setdefault("llm_model", get_default_llm())
     ctx.setdefault("temperature", Settings.model_settings.TEMPERATURE)
+
+    # 「高级配置」对话框提交的模型设置在这里落地。
+    # 必须放在本页任何 widget 创建之前: Streamlit 规定 widget 实例化之后不能再写
+    # 同名 session_state, 否则抛 StreamlitAPIException。
+    if st.session_state.pop("_mdt_apply_model_cfg", False):
+        for _k in ("platform", "llm_model", "temperature", "system_message"):
+            if _k in ctx:
+                st.session_state[_k] = ctx[_k]
+
     st.session_state.setdefault("cur_conv_name", chat_box.cur_chat_name)
     st.session_state.setdefault("last_conv_name", chat_box.cur_chat_name)
 
@@ -1134,20 +1144,64 @@ def mdt_teaching_page(api: ApiRequest, is_lite: bool = False):
 
     @st.experimental_dialog("模型配置", width="large")
     def llm_model_setting():
-        """模型配置对话框"""
+        """模型配置对话框
+
+        注意: 这里必须使用独立的 widget key。侧边栏已经创建了 key="platform" /
+        key="llm_model" 的 widget, 而 Streamlit 1.34 的 experimental_dialog 与主页面
+        共享 widget key 命名空间, 复用同名 key 会抛 DuplicateWidgetID。
+        选完后写入 chat context + 打标记, 由页面顶部的落地逻辑在下一次整页 rerun 时
+        应用到 session_state(那时同名 widget 尚未创建, 合法), 从而真正切换模型。
+        """
         cols = st.columns(3)
         platforms = ["所有"] + list(get_config_platforms())
-        platform = cols[0].selectbox("选择模型平台", platforms, key="platform")
+        cur_platform = st.session_state.get("platform") or (platforms[0] if platforms else "所有")
+        platform = cols[0].selectbox(
+            "选择模型平台",
+            platforms,
+            index=platforms.index(cur_platform) if cur_platform in platforms else 0,
+            key="mdt_dlg_platform",
+        )
         platform_name_for_api = None if platform == "所有" else platform
         llm_models = list(
             get_config_models(
                 model_type="llm", platform_name=platform_name_for_api
             )
         )
-        llm_model = cols[1].selectbox("选择LLM模型", llm_models, key="llm_model")
-        temperature = cols[2].slider("Temperature", 0.0, 1.0, key="temperature")
-        system_message = st.text_area("System Message:", key="system_message")
-        if st.button("确定"):
+        cur_model = st.session_state.get("llm_model", get_default_llm())
+        llm_model = cols[1].selectbox(
+            "选择LLM模型",
+            llm_models,
+            index=llm_models.index(cur_model) if cur_model in llm_models else 0,
+            key="mdt_dlg_llm_model",
+        )
+        temperature = cols[2].slider(
+            "Temperature",
+            0.0,
+            1.0,
+            value=float(st.session_state.get("temperature", Settings.model_settings.TEMPERATURE)),
+            key="mdt_dlg_temperature",
+        )
+        system_message = st.text_area(
+            "System Message:",
+            value=st.session_state.get("system_message", ""),
+            key="mdt_dlg_system_message",
+        )
+        if st.button("确定", key="mdt_dlg_ok"):
+            ctx["platform"] = platform
+            ctx["llm_model"] = llm_model
+            ctx["temperature"] = temperature
+            ctx["system_message"] = system_message
+            # 双保险, 保证"切换模型"一定生效:
+            #  ① 对话框是独立 fragment 运行, 主页面那两个同名 widget 不在本次运行中,
+            #     直接写 session_state 通常是被允许的 —— 立即生效;
+            #  ② 同时打标记, 万一 ① 被 Streamlit 拦截, 由页面顶部的落地逻辑在
+            #     下一次整页 rerun 时应用。
+            try:
+                for _k in ("platform", "llm_model", "temperature", "system_message"):
+                    st.session_state[_k] = ctx[_k]
+            except Exception as _e:  # noqa: BLE001
+                print(f"[mdt] 对话框直写 session_state 未生效, 改由页面顶部落地: {_e}")
+            st.session_state["_mdt_apply_model_cfg"] = True
             rerun()
 
     @st.experimental_dialog("重命名会话")
@@ -1218,9 +1272,14 @@ def mdt_teaching_page(api: ApiRequest, is_lite: bool = False):
         
         st.divider()
 
-        # 知识库关联
+        # 知识库关联（API 不可用时退化为仅"不使用知识库", 避免 NoneType 崩溃）
         st.subheader("📚 知识库关联")
-        kb_list = ["不使用知识库"] + [x["kb_name"] for x in api.list_knowledge_bases()]
+        kb_list = ["不使用知识库"] + [x["kb_name"] for x in (api.list_knowledge_bases() or [])]
+        default_kb = Settings.kb_settings.DEFAULT_KNOWLEDGE_BASE
+        if default_kb not in kb_list:
+            default_kb = "不使用知识库"
+        if st.session_state.get("mdt_selected_kb") not in kb_list:
+            st.session_state["mdt_selected_kb"] = default_kb
         selected_kb = st.selectbox(
             "关联知识库",
             kb_list,
@@ -1267,8 +1326,15 @@ def mdt_teaching_page(api: ApiRequest, is_lite: bool = False):
         st.caption(f"当前: `{selected_llm}`")
 
         if st.button("⚙️ 高级配置", use_container_width=True):
-            widget_keys = ["platform", "llm_model", "temperature", "system_message"]
-            chat_box.context_to_session(include=widget_keys)
+            # 注意: platform / llm_model 在上面侧边栏已经创建了对应的 widget,
+            # Streamlit 规定 widget 实例化之后不能再写同名 session_state, 否则抛
+            # StreamlitAPIException: "... cannot be modified after the widget with
+            # key ... is instantiated" (点高级配置即崩)。
+            # 这两项的当前值本来就已经在 session_state 中(由上面的 selectbox 写入),
+            # 无需再同步; 只把尚未实例化的两项从会话上下文带过去即可。
+            # 对话框内部是 @st.experimental_dialog(fragment) 独立一次运行,
+            # 因此它复用 platform / llm_model 这两个 key 不会冲突。
+            chat_box.context_to_session(include=["temperature", "system_message"])
             llm_model_setting()
 
         # 系统提示词显示

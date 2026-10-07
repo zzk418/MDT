@@ -1,6 +1,5 @@
 from typing import List
 
-import cv2
 import numpy as np
 import tqdm
 from langchain_community.document_loaders.unstructured import UnstructuredFileLoader
@@ -40,7 +39,12 @@ class RapidOCRPDFLoader(UnstructuredFileLoader):
             import fitz  # pyMuPDF里面的fitz包，不要与pip install fitz混淆
             import numpy as np
 
-            ocr = get_ocr()
+            # rapidocr(OCR引擎)未安装时降级: 只提取 PDF 文本层, 跳过嵌图 OCR。
+            # MDT 精简安装移除了 rapidocr_onnxruntime; 若需扫描件 OCR, 恢复该依赖即可。
+            try:
+                ocr = get_ocr()
+            except ImportError:
+                ocr = None
             doc = fitz.open(filepath)
             resp = ""
 
@@ -66,9 +70,14 @@ class RapidOCRPDFLoader(UnstructuredFileLoader):
                             page.rect.height
                         ) < Settings.kb_settings.PDF_OCR_THRESHOLD[1]:
                             continue
+                        # OCR 引擎未安装: 跳过图片识别, 只保留 PDF 文本层 (不再触碰 cv2)
+                        if ocr is None:
+                            continue
                         pix = fitz.Pixmap(doc, xref)
                         samples = pix.samples
                         if int(page.rotation) != 0:  # 如果Page有旋转角度，则旋转图片
+                            import cv2  # 懒加载: 仅"OCR可用+图片旋转"才需要 opencv
+
                             img_array = np.frombuffer(
                                 pix.samples, dtype=np.uint8
                             ).reshape(pix.height, pix.width, -1)

@@ -108,7 +108,7 @@ def run_webui(
         "client_caching": None,
         "client_displayEnabled": None,
         "client_showErrorDetails": None,
-        "client_toolbarMode": None,
+        "client_toolbarMode": "viewer",
         "client_showSidebarNavigation": None,
         "runner_magicEnabled": None,
         "runner_installTracer": None,

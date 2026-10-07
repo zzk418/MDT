@@ -1,3 +1,24 @@
+# =============================================================================
+# 快速调试版 Dockerfile —— 依赖层与代码层分离
+# =============================================================================
+# 与 docker/Dockerfile 的唯一区别：把"装依赖"和"拷代码"拆成两层。
+#
+#   原版：COPY . 在 uv pip install 之前 → 改任何一行代码都会让 1GB 的依赖层失效，
+#         每次重建都要重新解析/安装 187 个包（15–35 分钟）。
+#   本版：依赖由 requirements.lock 锁定，与源码无关 → 改代码只重建最后的代码层
+#         （10–30 秒）。
+#
+# 何时用哪个：
+#   日常改代码调试        → docker buildx build -f docker/Dockerfile.fast -t mdt:dev .
+#   改了 pyproject 依赖    → 先按 docker/Dockerfile 全量构建，再重新导出 requirements.lock
+#   首次部署/发版固化      → docker/Dockerfile（可复现的全量构建）
+#
+# requirements.lock 由已构建好的镜像导出：
+#   docker run --rm --entrypoint pip mdt:candidate freeze \
+#     | grep -v langchain-chatchat | grep -v "^-e " | grep -v "@ file://" | sort \
+#     > docker/requirements.lock
+# =============================================================================
+
 # 基础镜像
 FROM swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/python:3.11
 LABEL maintainer=MDT
@@ -16,12 +37,10 @@ ENV no_proxy="${NO_PROXY}"
 RUN ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime && \
     echo "Asia/Shanghai" > /etc/timezone
 
-# 配置华为云APT镜像源
 # 配置华为云 APT 镜像（Debian 12 / Bookworm）
 RUN sed -i 's|http://deb.debian.org|https://mirrors.huaweicloud.com|g' /etc/apt/sources.list.d/debian.sources && \
     sed -i 's|http://security.debian.org|https://mirrors.huaweicloud.com|g' /etc/apt/sources.list.d/debian.sources
 
-# libgl1/libglib2.0-0 原为 opencv-python 运行时 GL 依赖, opencv 已精简掉, 一并移除
 RUN apt-get update -y && \
     apt-get install -y git wget curl unzip && \
     apt-get clean && \
@@ -41,33 +60,29 @@ RUN wget -q https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-amd64.tgz
     mv ngrok /usr/local/bin/ && \
     rm ngrok.tgz
 
-# 复制整个MDT项目
-COPY . /root/MDT
-
-RUN sed -i 's/\r$//' /root/MDT/.env || true
-
-# 使用uv安装依赖
+# -----------------------------------------------------------------------------
+# ① 依赖层：只依赖 requirements.lock，与源码完全无关
+#    这一层只在 requirements.lock 变化时失效
+# -----------------------------------------------------------------------------
 WORKDIR /root/MDT/libs/chatchat-server
-
-# 配置uv使用清华镜像源(包最全; 访问走上面的 NO_PROXY 直连)
 ENV UV_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
-# 本机直连国内镜像约 0.1~0.6MB/s, 且波动大:
-#   拉大超时, 避免大 wheel(如 streamlit-aggrid 7.7MB)下载中断;
-#   限制并发数, 防止几十路并行把慢链路饿死导致个别小包也超时。
 ENV UV_HTTP_TIMEOUT=1800
 ENV UV_CONCURRENT_DOWNLOADS=8
 ENV UV_CACHE_DIR=/root/.cache/uv
 
-# 使用uv同步依赖（替代poetry install）- 移除xinference扩展
-# env -u: 剥掉 Docker Desktop / 宿主注入的代理, 让清华源直连(代理绕境外会慢到超时)
-# -v: 逐包打印正在拉取的 wheel(uv 默认在非交互日志里不显示任何进度)
-# --mount=type=cache: 下载缓存跨构建/跨失败保留, 依赖只需下一次(慢链路下省最多时间)
+COPY docker/requirements.lock /root/MDT/libs/chatchat-server/requirements.lock
+
+# --mount=type=cache: 下载缓存跨构建保留(首次构建填充后, 之后重装依赖免下载)
+# env -u: 剥掉 Docker Desktop / 宿主注入的代理, 让清华源直连
 RUN --mount=type=cache,target=/root/.cache/uv \
     env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY \
-    uv pip install -v --system .
+    uv pip install -v --system -r /root/MDT/libs/chatchat-server/requirements.lock
 
-# 安装llama-cpp-python（如果需要LLaMA环境）
-# RUN uv pip install --system ollama  # 注释掉，因为可能已经在依赖中
+# -----------------------------------------------------------------------------
+# ② 代码层：改代码只让以下内容失效（10–30 秒）
+#    本地包不再 pip 安装, 靠下面的 PYTHONPATH 直接加载源码
+# -----------------------------------------------------------------------------
+COPY . /root/MDT
 
 ## 确保 Python 可以找到 chatchat 模块
 ENV PYTHONPATH="/root/MDT/libs/chatchat-server:${PYTHONPATH}"

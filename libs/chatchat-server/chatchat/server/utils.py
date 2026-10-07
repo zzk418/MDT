@@ -883,9 +883,19 @@ def get_httpx_client(
     for host in os.environ.get("no_proxy", "").split(","):
         if host := host.strip():
             # default_proxies.update({host: None}) # Origin code
-            default_proxies.update(
-                {"all://" + host: None}
-            )  # PR 1838 fix, if not add 'all://', httpx will raise error
+            # PR 1838 fix, if not add 'all://', httpx will raise error
+            # 但 NO_PROXY 中可能有 httpx 无法解析成 URL 的条目, 例如 IPv6 回环地址
+            # "::1"(会被解析成 "all://::1" → InvalidURL: Invalid port)。
+            # 直接塞进 mounts 会让 httpx.Client 构造整体失败, 导致所有出站 API 调用
+            # 失效(WebUI 全部报错 TypeError: 'NoneType' object is not iterable)。
+            # 因此这里逐条校验, 解析不了的跳过。
+            pattern = "all://" + host
+            try:
+                httpx.URL(pattern)
+            except Exception:
+                logger.warning(f"跳过 httpx 无法解析的 NO_PROXY 条目: {host}")
+                continue
+            default_proxies.update({pattern: None})
 
     # merge default proxies with user provided proxies
     if isinstance(proxies, str):

@@ -19,8 +19,23 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
+set "MODEL_PROVIDER=cloud"
+for /f "tokens=1,* delims==" %%A in ('findstr /b /c:"MODEL_PROVIDER=" .env 2^>nul') do set "MODEL_PROVIDER=%%B"
+set "CLOUD_API_KEY="
+set "CLOUD_API_BASE_URL="
+set "CLOUD_LLM_MODEL="
+for /f "tokens=1,* delims==" %%A in ('findstr /b /c:"CLOUD_API_KEY=" /c:"CLOUD_API_BASE_URL=" /c:"CLOUD_LLM_MODEL=" .env 2^>nul') do set "%%A=%%B"
+set "COMPOSE_PROFILES="
+if /i "%MODEL_PROVIDER%"=="ollama" set "COMPOSE_PROFILES=ollama"
+if /i "%MODEL_PROVIDER%"=="auto" if "%CLOUD_API_KEY%"=="" set "COMPOSE_PROFILES=ollama"
+if /i "%MODEL_PROVIDER%"=="auto" if "%CLOUD_API_BASE_URL%"=="" set "COMPOSE_PROFILES=ollama"
+if /i "%MODEL_PROVIDER%"=="auto" if "%CLOUD_LLM_MODEL%"=="" set "COMPOSE_PROFILES=ollama"
+if not defined COMPOSE_PROFILES docker compose -f docker\docker-compose.win.yaml --env-file .env stop ollama >nul 2>&1
+
 echo [OK] 启动 chatchat 服务...
-docker compose -f docker\docker-compose.win.yaml --env-file .env restart chatchat
+rem --force-recreate: 单文件挂载(代码/配置/startup.sh)必须重建容器才能拿到最新文件，
+rem 普通 up/restart 在宿主机文件被替换(git checkout、编辑器另存为)后会挂载失败。
+docker compose -f docker\docker-compose.win.yaml --env-file .env up -d --no-build --force-recreate chatchat
 
 echo.
 echo ============================================

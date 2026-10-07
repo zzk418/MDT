@@ -1,0 +1,16 @@
+# 构建上下文只喂镜像真正要的东西; 其余进 CONTEXT 会永久占用镜像层体积
+.git
+.gitignore
+.env
+docs
+markdown_docs
+logs
+tools
+scripts
+.github
+__pycache__
+*.pyc
+*.pyo
+.DS_Store
+docker/data.tar.gz
+docker/*.log

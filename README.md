@@ -13,6 +13,7 @@
 
 - [快速启动](#快速启动)
 - [环境配置](#环境配置)
+- [数据与配置的本地位置](#数据与配置的本地位置)
 - [功能介绍](#功能介绍)
 - [项目架构](#项目架构)
 
@@ -41,7 +42,7 @@ cd MDT
 copy .env.example .env
 ```
 
-> `.env` 文件已提供默认配置，最少只���填写 `NGROK_AUTHTOKEN` 和 `CLOUD_API_KEY` 即可启动，详见 [环境配置](#环境配置)。
+> `.env` 文件已提供默认配置，默认使用云 API；填写 `CLOUD_API_KEY`、`CLOUD_API_BASE_URL` 和 `CLOUD_LLM_MODEL` 后即可启动，详见 [环境配置](#环境配置)。
 
 ### 3. 启动服务
 
@@ -54,7 +55,7 @@ scripts/run_docker.bat
 或在项目根目录命令行执行：
 
 ```bash
-docker compose -f docker\docker-compose.win.yaml --env-file .env up --build
+scripts\run_docker.bat --build
 ```
 
 ### 4. 访问服务
@@ -89,30 +90,43 @@ docker compose -f docker\docker-compose.win.yaml --env-file .env up --build
 NGROK_AUTHTOKEN=your_ngrok_token_here
 
 # =============================================
-# 模型配置（二选一或同时配置实现冗余）
+# 模型配置：默认云 API
 # =============================================
+MODEL_PROVIDER=cloud
 
-# 【方案A】本地 Ollama 模型（需要 GPU，首次启动会自动拉取）
-OLLAMA_MODELS=qwen3:4b,nomic-embed-text:latest
-
-# 【方案B】国内云 API（推荐，无需 GPU，填写后自动作为默认模型）
+# 国内云 API（推荐，默认不启动/不拉 Ollama 镜像）
 # 支持：阿里云百炼 / 智谱AI / 深度求索 / 月之暗面 / 字节豆包
 CLOUD_API_KEY=sk-your_api_key_here
 CLOUD_API_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
-CLOUD_LLM_MODEL=qwen-plus
+CLOUD_LLM_MODEL=gpt-5.5
+CLOUD_EMBED_MODEL=text-embedding-v3
+# 首次配置 embedding 后如需重建知识库再改为 true，平时保持 false。
+KB_REBUILD_ON_START=false
+
+# 后续切换模型只改这一行，然后执行 scripts\start.bat，无需重建镜像。
+# CLOUD_LLM_MODEL=gpt-4o
+# CLOUD_LLM_MODEL=qwen-plus
+
+# 本地轻量测试（需要时再切换）
+# MODEL_PROVIDER=ollama
+# OLLAMA_LLM_MODEL=smollm2:135m
+# OLLAMA_EMBED_MODEL=
 ```
 
 ### 模型启动逻辑
 
 ```
-启动时优先尝试拉取 Ollama 本地模型
-    ↓ 拉取成功 → 使用本地模型（速度快，私密）
-    ↓ 拉取失败 → 检测 CLOUD_API_KEY
-                  ↓ 已配置 → 自动切换云 API 启动（无需 GPU）
-                  ↓ 未配置 → 报错停止，提示配置
+MODEL_PROVIDER=cloud
+    ↓ 默认只启动 chatchat，不启动/不拉 Ollama
+    ↓ 使用 CLOUD_LLM_MODEL 和 CLOUD_EMBED_MODEL
+
+MODEL_PROVIDER=ollama
+    ↓ 启用 compose 的 ollama profile
+    ↓ 默认只拉 smollm2:135m（约 0.27GB）
+    ↓ 需要知识库向量化时，再配置 OLLAMA_EMBED_MODEL
 ```
 
-> **推荐同时配置两者**：正常使用本地模型，网络问题时自动降级到云 API，零停机。
+> 平时建议使用 `MODEL_PROVIDER=cloud`。本地 Ollama 仅用于联调和故障排查，`smollm2:135m` 不适合医学 RAG 正式回答。
 
 ### 国内云 API 推荐
 
@@ -122,6 +136,33 @@ CLOUD_LLM_MODEL=qwen-plus
 | 深度求索 | `https://api.deepseek.com/v1` | `deepseek-chat` | 性价比极高 |
 | 智谱AI | `https://open.bigmodel.cn/api/paas/v4` | `glm-4-flash` | 有免费额度 |
 | 月之暗面 | `https://api.moonshot.cn/v1` | `moonshot-v1-8k` | 长文本能力强 |
+
+---
+
+## 数据与配置的本地位置
+
+用 `docker/docker-compose.win.yaml` 启动时（Windows + Docker Desktop），网页里的改动会直接落到宿主机这份仓库里，重启容器/重启 Docker 都不会丢：
+
+| 内容 | 宿主机路径 | 容器内路径 |
+|------|-----------|-----------|
+| 知识库源文件 + 向量库 | `data/knowledge_base/` | `/root/mdt_data/data/knowledge_base` |
+| 对话、知识库信息（SQLite） | `data/knowledge_base/info.db` | 同上 |
+| 知识库 / 提示词 / 基础设置 | `kb_settings.yaml`、`prompt_settings.yaml`、`basic_settings.yaml` | `/root/mdt_data/*.yaml` |
+| 模型平台配置 | 不回写仓库，见下 | `/root/mdt_data/model_settings.yaml` |
+| 服务端代码、启动脚本 | `libs/chatchat-server/`、`docker/startup.sh` | 挂载生效，改完 `docker compose restart chatchat` 即可 |
+
+`model_settings.yaml` 由启动脚本用 `.env` + 仓库里的 `model_settings.yaml` 模板生成。默认只**合并** `.env` 管理的平台（cloud-api / deepseek-api）和默认模型，文件里其它改动（自己加的平台、温度等）不会被重启冲掉；想按 `.env` 全量重建就设 `MDT_REGEN_MODEL_SETTINGS=true`。
+
+> 网页「高级配置」里临时选的模型、System Message 存在浏览器会话（上游 chatchat 的设计），刷新或重启会回到 `.env` 默认值，不算落盘配置。
+
+> ⚠️ 代码、`startup.sh`、几个 `*_settings.yaml` 都是**单文件挂载**。在宿主机上用 `git checkout` 或“另存为”式编辑器改完这些文件后，文件被换掉（inode 变了），Docker Desktop 会挂载失败、容器起不来。用 `scripts\start.bat` 或 `docker compose -f docker/docker-compose.win.yaml --env-file .env up -d --force-recreate` 重建容器即可。
+
+### 备份 / 恢复
+
+```bash
+scripts/backup_data.sh                # 整卷打包到 ~/mdt-backups/（知识库 + 配置 + 对话）
+scripts/restore_data.sh <备份文件.tgz>  # 恢复（会先清空数据卷）
+```
 
 ---
 
@@ -170,8 +211,10 @@ MDT/
 │           ├── webui.py        # WebUI 入口（MDT 品牌定制）
 │           └── webui_pages/
 │               └── mdt_teaching.py  # MDT 教学核心页面
+├── data/
+│   └── knowledge_base/         # 知识库源文件 + 向量库 + 对话数据库（挂载进容器）
 ├── .env                        # 环境变量配置（不提交到 git）
-├── model_settings.yaml         # 模型平台配置
+├── model_settings.yaml         # 模型平台配置模板（生成物在数据卷里）
 └── README.md
 ```
 

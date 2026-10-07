@@ -19,7 +19,6 @@ langchainhub = "0.1.14"
 langchain-community = "0.0.36"
 langchain-openai = { version = "0.0.6", python = ">=3.8.1,<3.12,!=3.9.7" }
 langchain-experimental = "0.0.58"
-humanlayer= "0.7.6"
 nest_asyncio = "1.6.0"
 mcp = ">=1.4.1,<1.5"
 fastapi = "~0.109.2"
@@ -34,14 +33,15 @@ jieba = "0.42.1"
 rank_bm25 = "0.2.2"
 openpyxl = "3.1.4"
 networkx = "3.1"
-opencv-python = "~4.10.0.84"
+# opencv-python 已移除: 它只为 RapidOCR 图片旋转服务, OCR 已精简掉(cv2 改为懒加载)。
+# 仅当恢复扫描件 OCR 时需一并装回 opencv-python + Dockerfile 里的 libgl1/libglib2.0-0
 PyMuPDF = "~1.23.16"
-rapidocr_onnxruntime = "~1.3.8"
+# rapidocr_onnxruntime 已移除: MDT 库内无扫描件/图片, 为省 ~170MB onnxruntime 依赖精简掉。
+# 对应 pdf/docx/ppt loader 已加"OCR 缺失即降级纯文本"保护。若日后要 OCR 扫描件, 取消下行注释即可:
+# rapidocr_onnxruntime = "~1.3.8"
 requests = "~2.32.3"
-pathlib = "~1.0.1"
 pyjwt = "~2.8.0"
-elasticsearch = "*"
-numexpr = ">=1" #test
+# elasticsearch / numexpr 在 MDT 未使用(ES 后端懒加载未启用; numexpr 为上游#test遗留), 移除以精简安装
 strsimpy = ">=0.2.1"
 markdownify = ">=0.11.6"
 tqdm = ">=4.66.1"
@@ -152,6 +152,7 @@ optional = true
 # The only dependencies that should be added are
 # dependencies used for running tests (e.g., pytest, freezegun, response).
 # Any dependencies that do not meet that criteria will be removed.
+humanlayer = "0.7.6"
 pytest = "^7.3.0"
 pytest-cov = "^4.0.0"
 pytest-dotenv = "^0.5.2"

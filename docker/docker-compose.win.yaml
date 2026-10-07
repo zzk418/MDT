@@ -2,6 +2,8 @@ version: '3.11'
 services:
   ollama:
     image: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/ollama/ollama:latest
+    profiles:
+      - ollama
     restart: always
     volumes:
       - ~/.ollama:/root/.ollama
@@ -18,25 +20,52 @@ services:
     runtime: nvidia
 
   chatchat:
+    # 复用本地已有镜像，需要重建时执行: scripts/run_docker.sh --build
+    image: ${MDT_IMAGE:-ccr.ccs.tencentyun.com/kie-project/mdt:2026-09-17}
+    container_name: mdt
     build:
       context: ../
       dockerfile: docker/Dockerfile
     restart: always
-    depends_on:
-      - ollama
     environment:
       - NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN}
+      # ngrok 内网穿透开关: false = 完全不启动 ngrok(隔离网/无外网建议 false)
+      - ENABLE_NGROK=${ENABLE_NGROK:-true}
+      - MODEL_PROVIDER=${MODEL_PROVIDER:-cloud}
       - OLLAMA_MODELS=${OLLAMA_MODELS}
+      - OLLAMA_LLM_MODEL=${OLLAMA_LLM_MODEL:-smollm2:135m}
+      - OLLAMA_EMBED_MODEL=${OLLAMA_EMBED_MODEL:-}
+      - OLLAMA_AUTO_PULL=${OLLAMA_AUTO_PULL:-true}
       - OLLAMA_HOST=ollama
       # 国内云API冗余配置（留空则只用ollama）
       - CLOUD_API_KEY=${CLOUD_API_KEY:-}
       - CLOUD_API_BASE_URL=${CLOUD_API_BASE_URL:-}
       - CLOUD_LLM_MODEL=${CLOUD_LLM_MODEL:-}
+      - CLOUD_LLM_MODELS=${CLOUD_LLM_MODELS:-}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
+      - DEEPSEEK_API_BASE_URL=${DEEPSEEK_API_BASE_URL:-}
+      - DEEPSEEK_LLM_MODELS=${DEEPSEEK_LLM_MODELS:-}
+      - MTD_DEFAULT_LLM_MODEL=${MTD_DEFAULT_LLM_MODEL:-}
+      - CLOUD_EMBED_MODEL=${CLOUD_EMBED_MODEL:-}
+      - KB_REBUILD_ON_START=${KB_REBUILD_ON_START:-false}
+      # true = 每次启动按 .env 全量重建 model_settings.yaml
+      # false(默认) = 只把 .env 管理的平台/默认模型合并进已有文件，其余改动保留
+      - MDT_REGEN_MODEL_SETTINGS=${MDT_REGEN_MODEL_SETTINGS:-false}
+      # 知识库上传自动云端备份(私有 git 仓库),默认关闭
+      - KB_BACKUP_ENABLED=${KB_BACKUP_ENABLED:-false}
+      - KB_BACKUP_REMOTE_URL=${KB_BACKUP_REMOTE_URL:-}
+      - KB_BACKUP_TOKEN=${KB_BACKUP_TOKEN:-}
+      - KB_BACKUP_BRANCH=${KB_BACKUP_BRANCH:-main}
+      - KB_BACKUP_REPO_PATH=${KB_BACKUP_REPO_PATH:-}
+      - KB_BACKUP_COMMIT_AUTHOR_NAME=${KB_BACKUP_COMMIT_AUTHOR_NAME:-MDT}
+      - KB_BACKUP_COMMIT_AUTHOR_EMAIL=${KB_BACKUP_COMMIT_AUTHOR_EMAIL:-mdt@local}
     volumes:
       # 持久化其余数据（对话记录、临时文件等），先挂载命名卷作为基础
       - mdt_data:/root/mdt_data
       # 挂载代码卷：代码改动后只需 docker compose restart chatchat，无需 --build
       - ../libs/chatchat-server:/root/MDT/libs/chatchat-server
+      # 挂载启动脚本：改动后 docker compose restart chatchat 即生效
+      - ../docker/startup.sh:/root/startup.sh
       - ../model_settings.yaml:/root/MDT/model_settings.yaml
       # 挂载配置文件：修改后只需 restart，无需 --build（覆盖命名卷中的同名文件）
       - ../kb_settings.yaml:/root/mdt_data/kb_settings.yaml
@@ -51,5 +80,7 @@ services:
 
 volumes:
   mdt_data:
-    # 命名卷：持久化 /root/mdt_data（知识库向量、模型配置、对话记录）
-    # 首次启动会自动创建；如需完全重置运行: docker volume rm mdt_mdt_data
+    # 复用原先手动 docker run 建的卷，换 compose 后不另起空卷
+    name: mdt_data
+    # 命名卷：持久化 /root/mdt_data 里没有被 bind mount 覆盖的部分（model_settings.yaml、对话记录等）
+    # 完全重置: docker volume rm mdt_data

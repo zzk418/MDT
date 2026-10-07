@@ -115,7 +115,7 @@ def kb_chat(api: ApiRequest):
 
             with placeholder.container():
                 if dialogue_mode == "知识库问答":
-                    kb_list = [x["kb_name"] for x in api.list_knowledge_bases()]
+                    kb_list = [x["kb_name"] for x in (api.list_knowledge_bases() or [])]
                     selected_kb = st.selectbox(
                         "请选择知识库：",
                         kb_list,

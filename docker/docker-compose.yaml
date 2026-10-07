@@ -2,6 +2,8 @@ version: '3.11'
 services:
   ollama:
     image: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/ollama/ollama:latest
+    profiles:
+      - ollama
     restart: always
     network_mode: "host"
     volumes:
@@ -21,11 +23,29 @@ services:
       dockerfile: docker/Dockerfile
     restart: always
     network_mode: "host"
-    depends_on:
-      - ollama
     environment:
       - NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN}
+      # ngrok 内网穿透开关: false = 完全不启动 ngrok(隔离网/无外网建议 false)
+      - ENABLE_NGROK=${ENABLE_NGROK:-true}
+      - MODEL_PROVIDER=${MODEL_PROVIDER:-cloud}
       - OLLAMA_MODELS=${OLLAMA_MODELS}
+      - OLLAMA_LLM_MODEL=${OLLAMA_LLM_MODEL:-smollm2:135m}
+      - OLLAMA_EMBED_MODEL=${OLLAMA_EMBED_MODEL:-}
+      - OLLAMA_AUTO_PULL=${OLLAMA_AUTO_PULL:-true}
+      - OLLAMA_HOST=${OLLAMA_HOST:-localhost}
+      - CLOUD_API_KEY=${CLOUD_API_KEY:-}
+      - CLOUD_API_BASE_URL=${CLOUD_API_BASE_URL:-}
+      - CLOUD_LLM_MODEL=${CLOUD_LLM_MODEL:-}
+      - CLOUD_LLM_MODELS=${CLOUD_LLM_MODELS:-}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
+      - DEEPSEEK_API_BASE_URL=${DEEPSEEK_API_BASE_URL:-}
+      - DEEPSEEK_LLM_MODELS=${DEEPSEEK_LLM_MODELS:-}
+      - MTD_DEFAULT_LLM_MODEL=${MTD_DEFAULT_LLM_MODEL:-}
+      - CLOUD_EMBED_MODEL=${CLOUD_EMBED_MODEL:-}
+      - KB_REBUILD_ON_START=${KB_REBUILD_ON_START:-false}
+      # true = 每次启动按 .env 全量重建 model_settings.yaml
+      # false(默认) = 只把 .env 管理的平台/默认模型合并进已有文件，其余改动保留
+      - MDT_REGEN_MODEL_SETTINGS=${MDT_REGEN_MODEL_SETTINGS:-false}
     #volumes:
     #  - ../data:/root/MDT/mdt_data
     #  - ../libs/chatchat-server:/root/MDT/libs/chatchat-server

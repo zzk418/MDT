@@ -24,6 +24,7 @@ from chatchat.server.knowledge_base.utils import (
     validate_kb_name,
 )
 from chatchat.server.knowledge_base.kb_cache.faiss_cache import memo_faiss_pool
+from chatchat.server.knowledge_base.kb_backup import backup_enabled, backup_files
 from chatchat.server.utils import (
     BaseResponse,
     ListResponse,
@@ -181,6 +182,7 @@ def upload_docs(
 
     docs = json.loads(docs) if docs else {}
     failed_files = {}
+    saved_files = []  # 本次写盘成功的文件名,用于云端备份
     file_names = list(docs.keys())
 
     # 先将上传的文件保存到磁盘
@@ -190,6 +192,8 @@ def upload_docs(
         filename = result["data"]["file_name"]
         if result["code"] != 200:
             failed_files[filename] = result["msg"]
+        else:
+            saved_files.append(filename)
 
         if filename not in file_names:
             file_names.append(filename)
@@ -210,8 +214,20 @@ def upload_docs(
         if not not_refresh_vs_cache:
             kb.save_vector_store()
 
+    msg = "文件上传与向量化完成"
+    if saved_files and backup_enabled():
+        try:
+            ok, backup_msg = backup_files(knowledge_base_name, saved_files)
+        except Exception as e:
+            logger.error(f"知识库备份异常: {e.__class__.__name__}: {e}")
+            ok, backup_msg = False, f"{e.__class__.__name__}: {e}"
+        if ok:
+            msg += f"，{backup_msg}"
+        else:
+            msg += f"，但云端备份失败: {backup_msg}"
+
     return BaseResponse(
-        code=200, msg="文件上传与向量化完成", data={"failed_files": failed_files}
+        code=200, msg=msg, data={"failed_files": failed_files}
     )
 
 
@@ -246,6 +262,15 @@ def delete_docs(
 
     if not not_refresh_vs_cache:
         kb.save_vector_store()
+
+    if backup_enabled():
+        try:
+            ok, backup_msg = backup_files(knowledge_base_name, [])
+        except Exception as e:
+            logger.error(f"知识库删除后备份异常: {e.__class__.__name__}: {e}")
+            ok, backup_msg = False, f"{e.__class__.__name__}: {e}"
+        if not ok:
+            failed_files["__backup__"] = backup_msg
 
     return BaseResponse(
         code=200, msg=f"文件删除完成", data={"failed_files": failed_files}

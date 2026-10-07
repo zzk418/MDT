@@ -1,0 +1,72 @@
+# =============================================================================
+# 纯镜像部署 compose —— 部署机只需要两个文件: 本文件 + .env
+# 不需要源码、不需要构建、不需要联网装包, 适用于从腾讯云 TCR 拉取的镜像。
+#
+# 用法:
+#   cp .env.example .env         # 然后填 CLOUD_API_KEY / CLOUD_API_BASE_URL / CLOUD_LLM_MODEL
+#   docker compose -f docker-compose.image.yaml --env-file .env up -d
+#   docker compose -f docker-compose.image.yaml logs -f chatchat
+#
+# 与 docker-compose.win.yaml 的区别:
+#   win 版挂载宿主机源码/配置(开发调试用); 本版全部使用镜像内已烘焙的配置,
+#   数据(配置/知识库/对话)写入命名卷 mdt_data 持久化, 与镜像解耦。
+# =============================================================================
+
+services:
+  chatchat:
+    # 想换版本: 改这里, 或在 .env 里设 MDT_IMAGE=...
+    image: ${MDT_IMAGE:-ccr.ccs.tencentyun.com/kie-project/mdt:2026-09-16}
+    container_name: mdt
+    restart: always
+    environment:
+      # ---- ngrok 内网穿透 ----
+      - NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN:-}
+      # 隔离网络/无外网设 false; 设为 true 时即使 ngrok 连不上也只会降级告警, 不会退出
+      - ENABLE_NGROK=${ENABLE_NGROK:-true}
+      # ---- 模型提供方: cloud / ollama / auto ----
+      - MODEL_PROVIDER=${MODEL_PROVIDER:-cloud}
+      # ---- 云 API(OpenAI 兼容) ----
+      - CLOUD_API_KEY=${CLOUD_API_KEY:-}
+      - CLOUD_API_BASE_URL=${CLOUD_API_BASE_URL:-}
+      - CLOUD_LLM_MODEL=${CLOUD_LLM_MODEL:-}
+      # 可选: 逗号分隔的多个云模型, 便于在 WebUI「高级配置」里自由切换
+      # 例: CLOUD_LLM_MODELS=gpt-5.5,gpt-5.2,gpt-4o
+      - CLOUD_LLM_MODELS=${CLOUD_LLM_MODELS:-}
+      # ---- DeepSeek(独立平台, 可选; 留空则不注入) ----
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
+      - DEEPSEEK_API_BASE_URL=${DEEPSEEK_API_BASE_URL:-}
+      - DEEPSEEK_LLM_MODELS=${DEEPSEEK_LLM_MODELS:-}
+      # 可选: 覆盖默认模型(可填 deepseek-chat 等)
+      - MTD_DEFAULT_LLM_MODEL=${MTD_DEFAULT_LLM_MODEL:-}
+      # 留空则知识库向量化没有云端 embedding(需要本地 ollama 或在 WebUI 里配)
+      - CLOUD_EMBED_MODEL=${CLOUD_EMBED_MODEL:-}
+      - KB_REBUILD_ON_START=${KB_REBUILD_ON_START:-false}
+      # true = 每次启动按 .env 全量重建 model_settings.yaml
+      # false(默认) = 只把 .env 管理的平台/默认模型合并进已有文件，其余改动保留
+      - MDT_REGEN_MODEL_SETTINGS=${MDT_REGEN_MODEL_SETTINGS:-false}
+      # ---- 本地 ollama(仅 MODEL_PROVIDER=ollama/auto 时使用) ----
+      - OLLAMA_HOST=${OLLAMA_HOST:-localhost}
+      - OLLAMA_MODELS=${OLLAMA_MODELS:-}
+      - OLLAMA_LLM_MODEL=${OLLAMA_LLM_MODEL:-smollm2:135m}
+      - OLLAMA_EMBED_MODEL=${OLLAMA_EMBED_MODEL:-}
+      - OLLAMA_AUTO_PULL=${OLLAMA_AUTO_PULL:-true}
+      # ---- 知识库云端备份(可选) ----
+      - KB_BACKUP_ENABLED=${KB_BACKUP_ENABLED:-false}
+      - KB_BACKUP_REMOTE_URL=${KB_BACKUP_REMOTE_URL:-}
+      - KB_BACKUP_TOKEN=${KB_BACKUP_TOKEN:-}
+      - KB_BACKUP_BRANCH=${KB_BACKUP_BRANCH:-main}
+      - KB_BACKUP_COMMIT_AUTHOR_NAME=${KB_BACKUP_COMMIT_AUTHOR_NAME:-MDT}
+      - KB_BACKUP_COMMIT_AUTHOR_EMAIL=${KB_BACKUP_COMMIT_AUTHOR_EMAIL:-mdt@local}
+    ports:
+      - "7861:7861"   # API / docs
+      - "8501:8501"   # WebUI
+      - "4040:4040"   # ngrok 管理界面
+    volumes:
+      # 持久化 /root/mdt_data: 配置文件、知识库、对话记录。
+      # 首次启动用镜像内 model_settings.yaml + .env 云 API 生成；之后启动只合并
+      # .env 管理的平台与默认模型，卷里其它改动保留（MDT_REGEN_MODEL_SETTINGS=true 可强制重建）。
+      # 想完全重置: docker volume rm mdt_mdt_data
+      - mdt_data:/root/mdt_data
+
+volumes:
+  mdt_data:

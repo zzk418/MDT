@@ -16,9 +16,13 @@ class RapidOCRDocLoader(UnstructuredFileLoader):
             from docx.table import Table, _Cell
             from docx.text.paragraph import Paragraph
             from PIL import Image
-            from rapidocr_onnxruntime import RapidOCR
+            # rapidocr(OCR引擎)未安装时降级: 只提取 docx 段落/表格文本, 跳过文档内图片 OCR
+            try:
+                from rapidocr_onnxruntime import RapidOCR
 
-            ocr = RapidOCR()
+                ocr = RapidOCR()
+            except ImportError:
+                ocr = None
             doc = Document(filepath)
             resp = ""
 
@@ -54,11 +58,12 @@ class RapidOCRDocLoader(UnstructuredFileLoader):
                                 img_id
                             ]  # 根据图片id获取对应的图片
                             if isinstance(part, ImagePart):
-                                image = Image.open(BytesIO(part._blob))
-                                result, _ = ocr(np.array(image))
-                                if result:
-                                    ocr_result = [line[1] for line in result]
-                                    resp += "\n".join(ocr_result)
+                                if ocr is not None:
+                                    image = Image.open(BytesIO(part._blob))
+                                    result, _ = ocr(np.array(image))
+                                    if result:
+                                        ocr_result = [line[1] for line in result]
+                                        resp += "\n".join(ocr_result)
                 elif isinstance(block, Table):
                     for row in block.rows:
                         for cell in row.cells:
