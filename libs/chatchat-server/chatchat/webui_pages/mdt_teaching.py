@@ -18,10 +18,10 @@ from streamlit_extras.bottom_container import bottom
 from streamlit_paste_button import paste_image_button
 
 from chatchat.settings import Settings
-from langchain_chatchat.callbacks.agent_callback_handler import AgentStatus
 from chatchat.server.knowledge_base.model.kb_document_model import DocumentWithVSId
 from chatchat.server.knowledge_base.utils import format_reference
 from chatchat.server.utils import MsgType, get_config_models, get_config_platforms, get_default_llm, api_address
+from chatchat.webui_pages.mdt_kb_lookup import select_context, sources_markdown
 from chatchat.webui_pages.utils import *
 
 
@@ -1284,11 +1284,15 @@ def mdt_teaching_page(api: ApiRequest, is_lite: bool = False):
             "关联知识库",
             kb_list,
             key="mdt_selected_kb",
-            help="选择知识库后，对话将结合知识库内容进行回答"
+            help="选择知识库后，对话会依据其中的文档回答"
         )
         if selected_kb != "不使用知识库":
-            kb_top_k = st.number_input("匹配知识条数", 1, 20, value=3, key="mdt_kb_top_k")
-            score_threshold = st.slider("匹配分数阈值", 0.0, 2.0, value=1.0, step=0.01, key="mdt_score_threshold")
+            st.selectbox(
+                "资料范围",
+                ["自动匹配病种", "全部文档"],
+                key="mdt_kb_scope",
+                help="显式检索：按提问里的病种/主题关键词选相关文档整篇注入，不依赖向量库与嵌入模型",
+            )
 
         st.divider()
 
@@ -1406,136 +1410,85 @@ def mdt_teaching_page(api: ApiRequest, is_lite: bool = False):
 
     if active_prompt:
         selected_kb = st.session_state.get("mdt_selected_kb", "不使用知识库")
-        kb_top_k = st.session_state.get("mdt_kb_top_k", 3)
-        score_threshold = st.session_state.get("mdt_score_threshold", 1.0)
         configured_history_len = st.session_state.get("mdt_history_len", 5)
+        scope = "all" if st.session_state.get("mdt_kb_scope") == "全部文档" else "auto"
 
-        history = get_messages_history(configured_history_len)
+        # get_messages_history 会把 chat_box.context["system_message"] 顶到最前面，
+        # 而下面我们自己拼 system（含知识库资料），这里把历史里的 system 去掉避免重复。
+        history = [m for m in get_messages_history(configured_history_len) if m.get("role") != "system"]
 
-        # 系统提示注入历史（若历史为空则添加）
-        system_msg = {"role": "system", "content": build_teaching_system_prompt(teaching_mode, selected_case)}
-        messages = [system_msg] + history + [{"role": "user", "content": active_prompt}]
+        # 知识库用显式检索：读 content 目录、按病种关键词路由、整篇注入，不走向量库，
+        # 因此不需要 ollama / 嵌入模型，改了文档立即生效。
+        kb_context, kb_sources = "", []
+        if selected_kb and selected_kb != "不使用知识库":
+            kb_context, kb_sources = select_context(active_prompt, selected_kb, scope=scope)
+
+        # 组装 messages。
+        # 必须走 openai 兼容的 /v1/chat/completions：chatchat 自己的 /chat/chat/completions
+        # 只把 messages 的最后一条当 query（见 server/api_server/chat_routes.py），system 提示
+        # 与知识库资料会被静默丢掉——教学提示词此前一直没生效就是这个原因。
+        system_content = build_teaching_system_prompt(teaching_mode, selected_case)
+        if kb_context:
+            system_content = f"{system_content}\n\n{kb_context}"
+        messages = [{"role": "system", "content": system_content}]
+        messages += history
+        messages.append({"role": "user", "content": active_prompt})
 
         chat_box.user_say(active_prompt)
 
-        api_url = api_address(is_public=True)
-        use_kb = selected_kb and selected_kb != "不使用知识库"
-
-        if use_kb:
-            client = openai.Client(
-                base_url=f"{api_url}/knowledge_base/local_kb/{selected_kb}",
-                api_key="NONE",
-                timeout=100000,
-                http_client=httpx.Client(trust_env=False),
-            )
+        if kb_context:
             chat_box.ai_say([
-                Markdown("...", in_expander=True, title=f"知识库「{selected_kb}」匹配结果", state="running"),
-                f"正在查询知识库 `{selected_kb}`，请稍候...",
+                Markdown(
+                    sources_markdown(kb_sources),
+                    in_expander=True,
+                    title=f"资料「{selected_kb}」· 显式检索（未使用向量库）",
+                    state="complete",
+                ),
+                "正在依据资料生成回答...",
             ])
-            extra_body = dict(
-                top_k=kb_top_k,
-                score_threshold=score_threshold,
-                temperature=ctx.get("temperature"),
-                prompt_name="default",
-                return_direct=False,
-            )
-            params = dict(
-                messages=messages,
-                model=ctx.get("llm_model"),
-                stream=True,
-                extra_body=extra_body,
-            )
-            text = ""
-            docs_text = ""
-            started = False
-            try:
-                for d in client.chat.completions.create(**params):
-                    metadata = {"message_id": getattr(d, "message_id", "")}
-                    if not started:
-                        chat_box.update_msg("", element_index=1, streaming=False)
-                        started = True
-                    if hasattr(d, "docs"):
-                        docs_text = d.docs
-                        chat_box.update_msg(
-                            docs_text, element_index=0, streaming=False, state="complete"
-                        )
-                    else:
-                        text += d.choices[0].delta.content or ""
-                        chat_box.update_msg(
-                            text.replace("\n", "\n\n"), element_index=1, streaming=True, metadata=metadata
-                        )
-                chat_box.update_msg(text.replace("\n", "\n\n"), element_index=1, streaming=False)
-            except Exception as e:
-                st.error(str(e))
-                chat_box.update_msg(f"抱歉，处理请求时出现错误：{str(e)}", element_index=1, streaming=False)
         else:
-            # 普通对话（多轮，含系统提示）
-            llm_model_config = Settings.model_settings.LLM_MODEL_CONFIG
-            chat_model_config = {key: {} for key in llm_model_config.keys()}
-            for key in llm_model_config:
-                if c := llm_model_config[key]:
-                    model = c.get("model", "").strip() or get_default_llm()
-                    chat_model_config[key][model] = llm_model_config[key]
-            llm_model = ctx.get("llm_model")
-            if llm_model is not None:
-                chat_model_config["llm_model"][llm_model] = llm_model_config["llm_model"].get(
-                    llm_model, {}
-                )
-
             chat_box.ai_say("正在思考...")
-            text = ""
-            started = False
 
-            client = openai.Client(
-                base_url=f"{api_address()}/chat",
-                api_key="NONE",
-                timeout=100000,
-                http_client=httpx.Client(trust_env=False),
+        text = ""
+        started = False
+        last_message_id = ""
+
+        client = openai.Client(
+            base_url=f"{api_address()}/v1",
+            api_key="NONE",
+            timeout=100000,
+            http_client=httpx.Client(trust_env=False),
+        )
+
+        params = dict(
+            messages=messages,
+            model=ctx.get("llm_model"),
+            stream=True,
+        )
+        if Settings.model_settings.MAX_TOKENS:
+            params["max_tokens"] = Settings.model_settings.MAX_TOKENS
+
+        try:
+            # /v1 是原样透传，返回标准 OpenAI 流式块（没有 status / message_id 字段）
+            for chunk in client.chat.completions.create(**params):
+                last_message_id = getattr(chunk, "id", "") or last_message_id
+                delta = chunk.choices[0].delta.content if chunk.choices else ""
+                if not delta:
+                    continue
+                if not started:
+                    chat_box.update_msg("", streaming=False)
+                    started = True
+                text += delta
+                chat_box.update_msg(
+                    text.replace("\n", "\n\n"),
+                    streaming=True,
+                    metadata={"message_id": last_message_id},
+                )
+            chat_box.update_msg(
+                text.replace("\n", "\n\n"),
+                streaming=False,
+                metadata={"message_id": last_message_id},
             )
-
-            extra_body = dict(
-                chat_model_config=chat_model_config,
-                conversation_id=chat_box.context["uid"],
-            )
-
-            params = dict(
-                messages=messages,
-                model=ctx.get("llm_model"),
-                stream=True,
-                extra_body=extra_body,
-            )
-
-            if Settings.model_settings.MAX_TOKENS:
-                params["max_tokens"] = Settings.model_settings.MAX_TOKENS
-
-            try:
-                for d in client.chat.completions.create(**params):
-                    message_id = d.message_id
-                    metadata = {"message_id": message_id}
-
-                    if not started:
-                        chat_box.update_msg("", streaming=False)
-                        started = True
-
-                    if d.status == AgentStatus.error:
-                        st.error(d.choices[0].delta.content)
-                    elif d.status == AgentStatus.llm_new_token:
-                        text += d.choices[0].delta.content or ""
-                        chat_box.update_msg(
-                            text.replace("\n", "\n\n"), streaming=True, metadata=metadata
-                        )
-                    elif d.status == AgentStatus.llm_end:
-                        text += d.choices[0].delta.content or ""
-                        chat_box.update_msg(
-                            text.replace("\n", "\n\n"), streaming=False, metadata=metadata
-                        )
-                    elif d.status is None:  # 非Agent聊天
-                        text += d.choices[0].delta.content or ""
-                        chat_box.update_msg(
-                            text.replace("\n", "\n\n"), streaming=True, metadata=metadata
-                        )
-
-                chat_box.update_msg(text, streaming=False, metadata=metadata)
-            except Exception as e:
-                st.error(str(e))
-                chat_box.update_msg(f"抱歉，处理请求时出现错误：{str(e)}", streaming=False)
+        except Exception as e:
+            st.error(str(e))
+            chat_box.update_msg(f"抱歉，处理请求时出现错误：{str(e)}", streaming=False)
