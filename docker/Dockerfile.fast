@@ -97,6 +97,23 @@ RUN python cli.py init
 # 覆盖默认配置为正确的模型配置
 COPY model_settings.yaml /root/mdt_data/model_settings.yaml
 
+# -----------------------------------------------------------------------------
+# ③ 预置配置与知识库（纯镜像部署用）
+#     cli init 只会生成 samples 默认值, 这里用仓库版本覆盖:
+#       - kb/prompt/basic 配置: 默认知识库 MDT知识库、RAG 提示词修正、监听 0.0.0.0
+#       - data/knowledge_base : MDT知识库 的源文件 + FAISS 向量库 + info.db 登记
+#       - 删除 samples, 并清空对话记录, 避免把本机测试会话烘进发布镜像
+# -----------------------------------------------------------------------------
+COPY kb_settings.yaml /root/mdt_data/kb_settings.yaml
+COPY prompt_settings.yaml /root/mdt_data/prompt_settings.yaml
+COPY basic_settings.yaml /root/mdt_data/basic_settings.yaml
+COPY docker/sanitize_kb_db.py /tmp/sanitize_kb_db.py
+
+RUN rm -rf /root/mdt_data/data/knowledge_base/samples && \
+    cp -a /root/MDT/data/knowledge_base/. /root/mdt_data/data/knowledge_base/ && \
+    python /tmp/sanitize_kb_db.py /root/mdt_data/data/knowledge_base/info.db && \
+    rm -f /tmp/sanitize_kb_db.py
+
 EXPOSE 7861 8501
 
 # 复制启动脚本

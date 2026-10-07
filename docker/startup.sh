@@ -417,6 +417,17 @@ PY
     fi
 fi
 
+# 预置知识库补种：纯镜像部署时新数据卷会继承镜像内 /root/mdt_data；
+# 若卷已存在但既没有 MDT知识库 目录也没有 info.db（旧版本卷），这里补种一次。
+# Windows 开发 compose 把 ../data/knowledge_base 挂到该路径，条件不成立，不会覆盖。
+KB_SEED_SRC="/root/MDT/data/knowledge_base"
+KB_SEED_DST="/root/mdt_data/data/knowledge_base"
+if [ -d "$KB_SEED_SRC/MDT知识库" ] && [ ! -d "$KB_SEED_DST/MDT知识库" ] && [ ! -f "$KB_SEED_DST/info.db" ]; then
+    echo "数据目录为空, 复制镜像内预置知识库..."
+    mkdir -p "$KB_SEED_DST"
+    cp -a "$KB_SEED_SRC/." "$KB_SEED_DST/"
+fi
+
 # 默认不在每次启动时重建知识库，避免云 API 未配置 embedding 时阻塞启动。
 if [ "$KB_REBUILD_ON_START" = "true" ]; then
     echo "运行 chatchat kb -r..."
