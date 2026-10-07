@@ -828,6 +828,27 @@ def _fill_case_editor(case: Optional[Dict]) -> None:
     st.session_state["mdt_editing_case"] = case.get("id", "")
 
 
+def _apply_editor_pending() -> None:
+    """在创建任何表单 widget 之前，落地「载入病例」/「清空编辑器」请求。
+
+    Streamlit 规定：控件实例化之后不能再写它对应的 session_state key（否则抛
+    StreamlitAPIException）。所以点「编辑」或保存成功时不能当场改表单字段，只能记
+    一个待处理标记，等下一次运行、控件还没创建时再写。
+    """
+    action = st.session_state.pop("mdt_editor_action", None)
+    if action == "clear":
+        _fill_case_editor(None)
+    elif isinstance(action, str) and action.startswith("load:"):
+        _fill_case_editor(_find_case(action.split(":", 1)[1]))
+    else:
+        return
+
+    # 清掉上一次编辑残留的影像勾选与待上传文件
+    for key in [k for k in list(st.session_state) if k.startswith("mdt_keep_img_")]:
+        del st.session_state[key]
+    st.session_state.pop("mdt_case_uploads", None)
+
+
 def render_case_editor() -> None:
     """病例编辑器：新增/修改病例与影像，保存后写文件并同步到私有 git 仓库。"""
     editing_id = st.session_state.get("mdt_editing_case") or ""
@@ -849,6 +870,7 @@ def render_case_editor() -> None:
             "添加影像（jpg / png / webp，可多选）",
             type=["jpg", "jpeg", "png", "webp"],
             accept_multiple_files=True,
+            key="mdt_case_uploads",
         )
 
         existing = base.get("images") or []
@@ -890,8 +912,9 @@ def render_case_editor() -> None:
             case["images"] = keep + new_images
             saved = mdt_cases.save_case(case)
         ok, msg = mdt_cases.sync_to_cloud()
-        st.success(f"已保存 `{saved.name}`；{msg}")
-        _fill_case_editor(None)
+        # 不能在这里直接改表单字段（控件已实例化），交给下一次运行最前面处理
+        st.session_state["mdt_case_flash"] = f"已保存 `{saved.name}`；{msg}"
+        st.session_state["mdt_editor_action"] = "clear"
         st.rerun()
 
     if remove:
@@ -899,14 +922,19 @@ def render_case_editor() -> None:
             st.warning("先在病例卡片上点「编辑」，再回来删除")
         else:
             mdt_cases.delete_case(editing_id)
-            ok, msg = mdt_cases.sync_to_cloud()
-            st.success(f"已删除 {editing_id}；{msg}")
-            _fill_case_editor(None)
+            _, msg = mdt_cases.sync_to_cloud()
+            st.session_state["mdt_case_flash"] = f"已删除 {editing_id}；{msg}"
+            st.session_state["mdt_editor_action"] = "clear"
+            st.session_state["mdt_del_arm"] = ""
             st.rerun()
 
 
 def render_case_picker() -> None:
     """进门先选病例：按病种分页的病例卡片墙，外加新增/编辑入口。"""
+    _apply_editor_pending()
+    if flash := st.session_state.pop("mdt_case_flash", ""):
+        st.success(flash)
+
     studies = get_case_studies()
     total = sum(len(v) for v in studies.values())
     st.subheader("选择教学病例")
@@ -942,7 +970,8 @@ def render_case_picker() -> None:
                     if col_b.button(
                         "编辑", key=f"mdt_edit_{case['id']}", use_container_width=True
                     ):
-                        _fill_case_editor(case)
+                        # 交给下一次运行最前面载入，避免控件实例化后再写 session_state
+                        st.session_state["mdt_editor_action"] = f"load:{case['id']}"
                         st.rerun()
                     armed = st.session_state.get("mdt_del_arm") == case["id"]
                     if col_c.button(
