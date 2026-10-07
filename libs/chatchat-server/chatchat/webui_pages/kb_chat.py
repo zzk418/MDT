@@ -14,6 +14,7 @@ from chatchat.server.utils import get_config_models, get_config_platforms, get_d
 from chatchat.webui_pages.dialogue.dialogue import (save_session, restore_session, rerun,
                                                     get_messages_history, upload_temp_docs,
                                                     add_conv, del_conv, clear_conv)
+from chatchat.webui_pages.mdt_render import render_md
 from chatchat.webui_pages.utils import *
 
 
@@ -229,7 +230,7 @@ def kb_chat(api: ApiRequest):
                     first = False
                     continue
                 text += d.choices[0].delta.content or ""
-                chat_box.update_msg(text.replace("\n", "\n\n"), streaming=True)
+                chat_box.update_msg(render_md(text), streaming=True)
             chat_box.update_msg(text, streaming=False)
             # TODO: 搜索未配置API KEY时产生报错
         except Exception as e:

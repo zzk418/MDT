@@ -23,6 +23,7 @@ from chatchat.server.knowledge_base.model.kb_document_model import DocumentWithV
 from chatchat.server.knowledge_base.utils import format_reference
 from chatchat.server.utils import MsgType, get_config_models, get_config_platforms, get_default_llm, api_address
 from chatchat.webui_pages.mdt_kb_lookup import select_context, sources_markdown
+from chatchat.webui_pages.mdt_render import render_md
 from chatchat.webui_pages import mdt_cases
 from chatchat.webui_pages.utils import *
 
@@ -1928,12 +1929,12 @@ def mdt_teaching_page(api: ApiRequest, is_lite: bool = False):
                     started = True
                 text += delta
                 chat_box.update_msg(
-                    text.replace("\n", "\n\n"),
+                    render_md(text),
                     streaming=True,
                     metadata={"message_id": last_message_id},
                 )
             chat_box.update_msg(
-                text.replace("\n", "\n\n"),
+                render_md(text),
                 streaming=False,
                 metadata={"message_id": last_message_id},
             )
