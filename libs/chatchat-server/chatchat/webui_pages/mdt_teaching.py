@@ -1300,10 +1300,20 @@ def mdt_teaching_page(api: ApiRequest, is_lite: bool = False):
         # 模型配置（内联展示，直接可切换）
         st.subheader("🤖 模型配置")
         all_platforms = list(get_config_platforms())
-        # 默认优先选择 cloud-api 平台
-        default_platform_idx = next(
-            (i for i, p in enumerate(all_platforms) if p == "cloud-api"), 0
-        )
+        # 默认平台跟随默认模型: 默认模型属于哪个平台就选哪个平台, 都没有再退回 cloud-api。
+        # 之前这里写死 cloud-api, 导致 MTD_DEFAULT_LLM_MODEL=deepseek-chat 时平台仍是
+        # cloud-api, 模型列表里没有 deepseek 于是静默退回第一个云模型。
+        default_model = ctx.get("llm_model") or get_default_llm()
+
+        def _platform_index_of(model: str) -> int:
+            for i, name in enumerate(all_platforms):
+                if model in list(get_config_models(model_type="llm", platform_name=name)):
+                    return i
+            return next(
+                (i for i, name in enumerate(all_platforms) if name == "cloud-api"), 0
+            )
+
+        default_platform_idx = _platform_index_of(default_model)
         selected_platform = st.selectbox(
             "模型平台",
             all_platforms,
@@ -1311,8 +1321,7 @@ def mdt_teaching_page(api: ApiRequest, is_lite: bool = False):
             key="platform",
         )
         llm_models = list(get_config_models(model_type="llm", platform_name=selected_platform))
-        # 默认使用该平台第一个模型（cloud-api 只有一个）
-        default_model = ctx.get("llm_model", get_default_llm())
+        # 默认选中默认模型，该平台没有就取第一个
         default_model_idx = next(
             (i for i, m in enumerate(llm_models) if m == default_model), 0
         )
