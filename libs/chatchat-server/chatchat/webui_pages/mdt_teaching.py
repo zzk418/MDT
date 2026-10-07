@@ -775,6 +775,88 @@ def clear_conv(name: str = None):
     chat_box.reset_history(name=name or None)
 
 
+TEACHING_MODES = ["案例分析", "虚拟仿真", "团队协作", "考核评估"]
+
+
+def render_case_picker() -> None:
+    """进门先选病例：按病种分页的病例卡片墙。
+
+    之前默认直接落在「案例分析 + 前列腺癌 + 列表第一个病例」，每次进门都一样，
+    看着像玩具。这里改成先让学生挑病例，选完再进入四步学习路径。
+    """
+    total = sum(len(v) for v in MDT_CASE_STUDIES.values())
+    st.subheader("选择教学病例")
+    st.caption(
+        f"共 {total} 个病例 · {len(MDT_CASE_STUDIES)} 个病种。"
+        "选完进入学习路径：案例分析 → 虚拟仿真 → 团队协作 → 考核评估。"
+        "不选病例也可以直接在下方提问。"
+    )
+
+    tabs = st.tabs(list(MDT_CASE_STUDIES.keys()))
+    for tab, (disease, cases) in zip(tabs, MDT_CASE_STUDIES.items()):
+        with tab:
+            cols = st.columns(2)
+            for i, case in enumerate(cases):
+                with cols[i % 2].container(border=True):
+                    st.markdown(f"**{case['title']}**")
+                    st.caption(f"难度：{case.get('difficulty', '未标注')}")
+                    tags = case.get("tags") or []
+                    if tags:
+                        st.caption("标签：" + "、".join(tags))
+                    st.write(case.get("description", ""))
+                    if st.button(
+                        "开始学习",
+                        key=f"mdt_pick_{case.get('id', i)}",
+                        use_container_width=True,
+                    ):
+                        st.session_state["selected_case"] = case
+                        st.session_state["selected_disease"] = disease
+                        st.session_state["selected_case_title"] = case["title"]
+                        st.rerun()
+
+
+def render_case_header(selected_case: dict, teaching_mode: str) -> None:
+    """顶部状态条：当前病种/病例/环节 + 换病例。"""
+    left, right = st.columns([5, 1])
+    with left:
+        st.markdown(f"**当前病例：{selected_case['title']}**")
+        st.caption(
+            f"{st.session_state.get('selected_disease', '')}｜"
+            f"难度：{selected_case.get('difficulty', '未标注')}｜"
+            f"当前环节：{teaching_mode}"
+        )
+    with right:
+        if st.button("换病例", use_container_width=True, key="mdt_change_case"):
+            st.session_state["selected_case"] = None
+            st.rerun()
+    st.divider()
+
+
+def render_mode_steps() -> str:
+    """四步学习路径条：当前位置高亮，可点击切换。返回当前模式。"""
+    current = st.session_state.get("teaching_mode", TEACHING_MODES[0])
+    if current not in TEACHING_MODES:
+        current = TEACHING_MODES[0]
+
+    cols = st.columns(len(TEACHING_MODES))
+    for i, mode in enumerate(TEACHING_MODES):
+        active = mode == current
+        if cols[i].button(
+            f"{i + 1}. {mode}",
+            use_container_width=True,
+            type="primary" if active else "secondary",
+            key=f"mdt_mode_step_{i}",
+        ) and not active:
+            st.session_state["teaching_mode"] = mode
+            st.rerun()
+
+    st.progress(
+        (TEACHING_MODES.index(current) + 1) / len(TEACHING_MODES),
+        text=f"学习路径：第 {TEACHING_MODES.index(current) + 1} / {len(TEACHING_MODES)} 步 · {current}",
+    )
+    return current
+
+
 def init_mdt_widgets():
     """初始化MDT教学组件"""
     st.session_state.setdefault("selected_disease", "前列腺癌")
@@ -805,7 +887,7 @@ def build_teaching_system_prompt(teaching_mode: str, selected_case: dict = None)
 {selected_case.get('content', selected_case.get('description', ''))}
 """
         else:
-            case_info = "尚未选择教学案例，请指导学员从侧边栏选择案例。"
+            case_info = "尚未选择教学病例，请先在病例列表中选择一个病例。"
 
         return base_prompt + f"""
 你正在指导住院医师进行 MDT 案例分析教学。你已获得以下完整病例资料，请基于这些真实数据进行教学。
@@ -871,7 +953,7 @@ def build_teaching_system_prompt(teaching_mode: str, selected_case: dict = None)
 def display_case_analysis(selected_case):
     """显示案例分析界面"""
     if not selected_case:
-        st.info("请从侧边栏选择一个教学案例开始分析")
+        st.info("请先在病例列表中选择一个教学病例")
         return
 
     st.header(f"📊 案例分析：{selected_case['title']}")
@@ -1214,38 +1296,10 @@ def mdt_teaching_page(api: ApiRequest, is_lite: bool = False):
             st.session_state["cur_conv_name"] = name
             rerun()
 
-    # 侧边栏
+    # 侧边栏：只放会话与配置；病例选择在主区（render_case_picker）
     with st.sidebar:
         st.header("🏥 MDT教学系统")
-        
-        # 教学模式选择
-        teaching_mode = st.radio(
-            "选择教学模式",
-            ["案例分析", "虚拟仿真", "团队协作", "考核评估"],
-            key="teaching_mode"
-        )
-        
-        # 疾病类型选择
-        disease_type = st.selectbox(
-            "选择疾病类型",
-            list(MDT_CASE_STUDIES.keys()),
-            key="selected_disease"
-        )
-        
-        # 案例选择
-        cases = MDT_CASE_STUDIES[disease_type]
-        case_options = {case["title"]: case for case in cases}
-        selected_case_title = st.selectbox(
-            "选择教学案例",
-            list(case_options.keys()),
-            key="selected_case_title"
-        )
-        
-        if selected_case_title:
-            st.session_state.selected_case = case_options[selected_case_title]
-        
-        st.divider()
-        
+
         # 会话管理
         st.subheader("💬 会话管理")
         conv_names = chat_box.get_chat_names()
@@ -1272,107 +1326,118 @@ def mdt_teaching_page(api: ApiRequest, is_lite: bool = False):
         
         st.divider()
 
-        # 知识库关联（API 不可用时退化为仅"不使用知识库", 避免 NoneType 崩溃）
-        st.subheader("📚 知识库关联")
-        kb_list = ["不使用知识库"] + [x["kb_name"] for x in (api.list_knowledge_bases() or [])]
-        default_kb = Settings.kb_settings.DEFAULT_KNOWLEDGE_BASE
-        if default_kb not in kb_list:
-            default_kb = "不使用知识库"
-        if st.session_state.get("mdt_selected_kb") not in kb_list:
-            st.session_state["mdt_selected_kb"] = default_kb
-        selected_kb = st.selectbox(
-            "关联知识库",
-            kb_list,
-            key="mdt_selected_kb",
-            help="选择知识库后，对话会依据其中的文档回答"
-        )
-        if selected_kb != "不使用知识库":
-            st.selectbox(
-                "资料范围",
-                ["自动匹配病种", "全部文档"],
-                key="mdt_kb_scope",
-                help="显式检索：按提问里的病种/主题关键词选相关文档整篇注入，不依赖向量库与嵌入模型",
+        with st.expander("📚 知识库与检索", expanded=False):
+            # 知识库关联（API 不可用时退化为仅"不使用知识库", 避免 NoneType 崩溃）
+            st.subheader("📚 知识库关联")
+            kb_list = ["不使用知识库"] + [x["kb_name"] for x in (api.list_knowledge_bases() or [])]
+            default_kb = Settings.kb_settings.DEFAULT_KNOWLEDGE_BASE
+            if default_kb not in kb_list:
+                default_kb = "不使用知识库"
+            if st.session_state.get("mdt_selected_kb") not in kb_list:
+                st.session_state["mdt_selected_kb"] = default_kb
+            selected_kb = st.selectbox(
+                "关联知识库",
+                kb_list,
+                key="mdt_selected_kb",
+                help="选择知识库后，对话会依据其中的文档回答"
             )
+            if selected_kb != "不使用知识库":
+                st.selectbox(
+                    "资料范围",
+                    ["自动匹配病种", "全部文档"],
+                    key="mdt_kb_scope",
+                    help="显式检索：按提问里的病种/主题关键词选相关文档整篇注入，不依赖向量库与嵌入模型",
+                )
 
-        st.divider()
+            st.divider()
 
-        # 对话轮数配置
-        history_len = st.number_input("多轮对话保留轮数", 0, 20, value=5, key="mdt_history_len")
+            # 对话轮数配置
+            history_len = st.number_input("多轮对话保留轮数", 0, 20, value=5, key="mdt_history_len")
 
-        st.divider()
+            st.divider()
 
-        # 模型配置（内联展示，直接可切换）
-        st.subheader("🤖 模型配置")
-        all_platforms = list(get_config_platforms())
-        # 默认平台跟随默认模型: 默认模型属于哪个平台就选哪个平台, 都没有再退回 cloud-api。
-        # 之前这里写死 cloud-api, 导致 MTD_DEFAULT_LLM_MODEL=deepseek-chat 时平台仍是
-        # cloud-api, 模型列表里没有 deepseek 于是静默退回第一个云模型。
-        default_model = ctx.get("llm_model") or get_default_llm()
 
-        def _platform_index_of(model: str) -> int:
-            for i, name in enumerate(all_platforms):
-                if model in list(get_config_models(model_type="llm", platform_name=name)):
-                    return i
-            return next(
-                (i for i, name in enumerate(all_platforms) if name == "cloud-api"), 0
+        with st.expander("🤖 模型配置", expanded=False):
+            # 模型配置（内联展示，直接可切换）
+            st.subheader("🤖 模型配置")
+            all_platforms = list(get_config_platforms())
+            # 默认平台跟随默认模型: 默认模型属于哪个平台就选哪个平台, 都没有再退回 cloud-api。
+            # 之前这里写死 cloud-api, 导致 MTD_DEFAULT_LLM_MODEL=deepseek-chat 时平台仍是
+            # cloud-api, 模型列表里没有 deepseek 于是静默退回第一个云模型。
+            default_model = ctx.get("llm_model") or get_default_llm()
+
+            def _platform_index_of(model: str) -> int:
+                for i, name in enumerate(all_platforms):
+                    if model in list(get_config_models(model_type="llm", platform_name=name)):
+                        return i
+                return next(
+                    (i for i, name in enumerate(all_platforms) if name == "cloud-api"), 0
+                )
+
+            default_platform_idx = _platform_index_of(default_model)
+            selected_platform = st.selectbox(
+                "模型平台",
+                all_platforms,
+                index=default_platform_idx,
+                key="platform",
             )
+            llm_models = list(get_config_models(model_type="llm", platform_name=selected_platform))
+            # 默认选中默认模型，该平台没有就取第一个
+            default_model_idx = next(
+                (i for i, m in enumerate(llm_models) if m == default_model), 0
+            )
+            selected_llm = st.selectbox(
+                "LLM 模型",
+                llm_models,
+                index=default_model_idx,
+                key="llm_model",
+            )
+            ctx["llm_model"] = selected_llm
+            st.caption(f"当前: `{selected_llm}`")
 
-        default_platform_idx = _platform_index_of(default_model)
-        selected_platform = st.selectbox(
-            "模型平台",
-            all_platforms,
-            index=default_platform_idx,
-            key="platform",
-        )
-        llm_models = list(get_config_models(model_type="llm", platform_name=selected_platform))
-        # 默认选中默认模型，该平台没有就取第一个
-        default_model_idx = next(
-            (i for i, m in enumerate(llm_models) if m == default_model), 0
-        )
-        selected_llm = st.selectbox(
-            "LLM 模型",
-            llm_models,
-            index=default_model_idx,
-            key="llm_model",
-        )
-        ctx["llm_model"] = selected_llm
-        st.caption(f"当前: `{selected_llm}`")
-
-        if st.button("⚙️ 高级配置", use_container_width=True):
-            # 注意: platform / llm_model 在上面侧边栏已经创建了对应的 widget,
-            # Streamlit 规定 widget 实例化之后不能再写同名 session_state, 否则抛
-            # StreamlitAPIException: "... cannot be modified after the widget with
-            # key ... is instantiated" (点高级配置即崩)。
-            # 这两项的当前值本来就已经在 session_state 中(由上面的 selectbox 写入),
-            # 无需再同步; 只把尚未实例化的两项从会话上下文带过去即可。
-            # 对话框内部是 @st.experimental_dialog(fragment) 独立一次运行,
-            # 因此它复用 platform / llm_model 这两个 key 不会冲突。
-            chat_box.context_to_session(include=["temperature", "system_message"])
-            llm_model_setting()
+            if st.button("⚙️ 高级配置", use_container_width=True):
+                # 注意: platform / llm_model 在上面侧边栏已经创建了对应的 widget,
+                # Streamlit 规定 widget 实例化之后不能再写同名 session_state, 否则抛
+                # StreamlitAPIException: "... cannot be modified after the widget with
+                # key ... is instantiated" (点高级配置即崩)。
+                # 这两项的当前值本来就已经在 session_state 中(由上面的 selectbox 写入),
+                # 无需再同步; 只把尚未实例化的两项从会话上下文带过去即可。
+                # 对话框内部是 @st.experimental_dialog(fragment) 独立一次运行,
+                # 因此它复用 platform / llm_model 这两个 key 不会冲突。
+                chat_box.context_to_session(include=["temperature", "system_message"])
+                llm_model_setting()
 
         # 系统提示词显示
         with st.expander("📋 当前系统提示词"):
             system_prompt = build_teaching_system_prompt(
-                teaching_mode,
+                st.session_state.get("teaching_mode", TEACHING_MODES[0]),
                 st.session_state.get("selected_case")
             )
             st.text_area("系统提示词", system_prompt, height=200, disabled=True)
     
     # 主内容区域
-    st.title("🤖 AI+MDT诊疗教学系统")
-    
-    # 根据教学模式显示对应界面
+    teaching_mode = st.session_state.get("teaching_mode", TEACHING_MODES[0])
+    if teaching_mode not in TEACHING_MODES:
+        teaching_mode = TEACHING_MODES[0]
     selected_case = st.session_state.get("selected_case")
-    
-    if teaching_mode == "案例分析":
-        display_case_analysis(selected_case)
-    elif teaching_mode == "虚拟仿真":
-        display_virtual_simulation()
-    elif teaching_mode == "团队协作":
-        display_team_collaboration()
-    elif teaching_mode == "考核评估":
-        display_assessment_evaluation()
-    
+
+    st.title("🤖 AI+MDT诊疗教学系统")
+
+    if not selected_case:
+        # 进门先选病例，而不是固定落在那一个默认病例上
+        render_case_picker()
+    else:
+        render_case_header(selected_case, teaching_mode)
+        teaching_mode = render_mode_steps()
+        if teaching_mode == "案例分析":
+            display_case_analysis(selected_case)
+        elif teaching_mode == "虚拟仿真":
+            display_virtual_simulation()
+        elif teaching_mode == "团队协作":
+            display_team_collaboration()
+        elif teaching_mode == "考核评估":
+            display_assessment_evaluation()
+
     # 显示聊天框
     chat_box.output_messages()
     
