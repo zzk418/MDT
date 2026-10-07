@@ -186,6 +186,13 @@ def knowledge_base_page(api: ApiRequest, is_lite: bool = None):
             cols[2].write("")
             cols[2].write("")
             zh_title_enhance = cols[2].checkbox("开启中文标题加强", Settings.kb_settings.ZH_TITLE_ENHANCE)
+            # MDT 教学页用的是显式检索（直接读 content 目录），不需要向量索引；
+            # 向量化还依赖 ollama 嵌入模型，内网部署通常没有，因此默认关闭。
+            to_vector_store = cols[2].checkbox(
+                "同时建立向量索引",
+                False,
+                help="仅在使用向量检索时需要；依赖 ollama 嵌入模型，默认不建。",
+            )
 
         if st.button(
             "添加文件到知识库",
@@ -196,6 +203,7 @@ def knowledge_base_page(api: ApiRequest, is_lite: bool = None):
                 files,
                 knowledge_base_name=kb,
                 override=True,
+                to_vector_store=to_vector_store,
                 chunk_size=chunk_size,
                 chunk_overlap=chunk_overlap,
                 zh_title_enhance=zh_title_enhance,
