@@ -850,11 +850,22 @@ def _apply_editor_pending() -> None:
 
 
 def render_case_editor() -> None:
-    """病例编辑器：新增/修改病例与影像，保存后写文件并同步到私有 git 仓库。"""
+    """病例编辑器：新增/修改病例与影像，保存后写文件并同步到私有 git 仓库。
+
+    这个函数只在页签之外（页面顶部）渲染：st.tabs 无法用代码切换页签，如果把它放在
+    最后一个页签里，用户点卡片上的「编辑」后看不到任何反应。
+    """
     editing_id = st.session_state.get("mdt_editing_case") or ""
     base = _find_case(editing_id) if editing_id else {}
-    if editing_id:
-        st.info(f"正在编辑：{editing_id}")
+
+    head_left, head_right = st.columns([4, 1])
+    with head_left:
+        st.subheader(f"✏️ 编辑病例：{editing_id}" if editing_id else "➕ 新建病例")
+    with head_right:
+        if st.button("关闭编辑器", key="mdt_editor_close", use_container_width=True):
+            st.session_state["mdt_editor_open"] = False
+            st.session_state["mdt_editor_action"] = "clear"
+            st.rerun()
 
     with st.form("mdt_case_form", clear_on_submit=False):
         col1, col2, col3 = st.columns([2, 3, 1])
@@ -915,17 +926,19 @@ def render_case_editor() -> None:
         # 不能在这里直接改表单字段（控件已实例化），交给下一次运行最前面处理
         st.session_state["mdt_case_flash"] = f"已保存 `{saved.name}`；{msg}"
         st.session_state["mdt_editor_action"] = "clear"
+        st.session_state["mdt_editor_open"] = False
         st.rerun()
 
     if remove:
         if not editing_id:
-            st.warning("先在病例卡片上点「编辑」，再回来删除")
+            st.warning("先点病例卡片上的「编辑」，再回来删除")
         else:
             mdt_cases.delete_case(editing_id)
             _, msg = mdt_cases.sync_to_cloud()
             st.session_state["mdt_case_flash"] = f"已删除 {editing_id}；{msg}"
             st.session_state["mdt_editor_action"] = "clear"
             st.session_state["mdt_del_arm"] = ""
+            st.session_state["mdt_editor_open"] = False
             st.rerun()
 
 
@@ -937,6 +950,12 @@ def render_case_picker() -> None:
 
     studies = get_case_studies()
     total = sum(len(v) for v in studies.values())
+
+    # 编辑器置顶显示：放在页签里用户点「编辑」看不到反应（st.tabs 不能代码切换）
+    if st.session_state.get("mdt_editor_open"):
+        render_case_editor()
+        st.divider()
+
     st.subheader("选择教学病例")
     st.caption(
         f"共 {total} 个病例 · {len(studies)} 个病种。病例是 Markdown 文件"
@@ -944,7 +963,7 @@ def render_case_picker() -> None:
         "不选病例也可以直接在下方提问。"
     )
 
-    tabs = st.tabs(list(studies.keys()) + ["＋ 新增 / 编辑病例"])
+    tabs = st.tabs(list(studies.keys()) + ["＋ 新增病例"])
     for tab, (disease, cases) in zip(tabs, studies.items()):
         with tab:
             cols = st.columns(2)
@@ -970,8 +989,9 @@ def render_case_picker() -> None:
                     if col_b.button(
                         "编辑", key=f"mdt_edit_{case['id']}", use_container_width=True
                     ):
-                        # 交给下一次运行最前面载入，避免控件实例化后再写 session_state
+                        # 记待处理标记 + 打开置顶编辑器；下一次运行最前面载入字段
                         st.session_state["mdt_editor_action"] = f"load:{case['id']}"
+                        st.session_state["mdt_editor_open"] = True
                         st.rerun()
                     armed = st.session_state.get("mdt_del_arm") == case["id"]
                     if col_c.button(
@@ -989,7 +1009,11 @@ def render_case_picker() -> None:
                             st.toast(f"已删除 {case['id']}；{msg}")
                             st.rerun()
     with tabs[-1]:
-        render_case_editor()
+        st.caption("点下面的按钮在页面顶部打开编辑器；修改已有病例请点卡片上的「编辑」。")
+        if st.button("＋ 新建病例", type="primary", key="mdt_new_case"):
+            st.session_state["mdt_editor_action"] = "clear"
+            st.session_state["mdt_editor_open"] = True
+            st.rerun()
 
 
 def render_case_header(selected_case: dict, teaching_mode: str) -> None:
