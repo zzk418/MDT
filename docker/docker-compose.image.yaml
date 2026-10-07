@@ -15,7 +15,7 @@
 services:
   chatchat:
     # 想换版本: 改这里, 或在 .env 里设 MDT_IMAGE=...
-    image: ${MDT_IMAGE:-ccr.ccs.tencentyun.com/kie-project/mdt:2026-10-07}
+    image: ${MDT_IMAGE:-ccr.ccs.tencentyun.com/kie-project/mdt:2026-10-08}
     container_name: mdt
     restart: always
     environment:
