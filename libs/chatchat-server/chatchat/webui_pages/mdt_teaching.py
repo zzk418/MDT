@@ -950,251 +950,426 @@ def build_teaching_system_prompt(teaching_mode: str, selected_case: dict = None)
         return base_prompt
 
 
+def _submit_for_review(task: str, answer: str, rubric: str, mode_label: str) -> bool:
+    """把学生作答交给模型按评分点点评（先答后评）。
+
+    返回是否已提交。所有模式共用这一条出口：先让学生给出判断，再让模型对照
+    病例与知识库逐条点评，而不是直接抛一篇标准答案。
+    """
+    if not (answer or "").strip():
+        st.warning("先写下你的判断再提交，这样才能给出有针对性的点评。")
+        return False
+
+    case = st.session_state.get("selected_case") or {}
+    st.session_state["pending_prompt"] = (
+        f"【{mode_label} · 先答后评】\n"
+        f"当前病例：{case.get('title', '未选择')}\n"
+        f"任务：{task}\n\n"
+        f"我的作答：\n{answer.strip()}\n\n"
+        "请按下面顺序点评，不要直接重写一整篇标准答案：\n"
+        "1. 先指出我答对的部分，逐条对应我的原文；\n"
+        "2. 再指出遗漏、含糊或错误的点，说明正确思路；\n"
+        f"3. 评分点：{rubric}\n"
+        "4. 最后给「参考要点」，并注明依据的知识库文档与章节；\n"
+        "5. 如果我的作答与病例资料矛盾，直接指出。"
+    )
+    return True
+
+
+def _ask_reference(task: str, mode_label: str) -> None:
+    """直接讲参考思路（学生不想先作答时的出口）。"""
+    case = st.session_state.get("selected_case") or {}
+    st.session_state["pending_prompt"] = (
+        f"【{mode_label} · 参考讲解】\n"
+        f"当前病例：{case.get('title', '未选择')}\n"
+        f"请给出「{task}」的完整参考思路，条理清晰、可直接照着复盘，"
+        "并注明依据的知识库文档与章节。"
+    )
+
+
+# ---------------------------------------------------------------------------
+# 案例分析：三类任务，先写判断再点评
+# ---------------------------------------------------------------------------
+CASE_TASKS = [
+    {
+        "title": "① 诊断与分期",
+        "task": "给出诊断、临床分期与危险度分层",
+        "question": "请写出：诊断、TNM 分期、分级/风险分层，以及每条判断依据来自病例里的哪项资料。",
+        "rubric": "诊断是否准确；分期分级是否正确；是否引用了 PSA/影像/病理等关键依据；是否列出仍需补充的检查",
+    },
+    {
+        "title": "② 治疗决策",
+        "task": "给出首选方案、备选方案与理由",
+        "question": "请写出：首选治疗方案、备选方案、选择理由，以及需要先补充的资料或前提条件。",
+        "rubric": "首选方案是否匹配该分期/风险；是否给出备选方案与切换条件；是否考虑体能状态、合并症与患者意愿；是否说明治疗顺序与随访",
+    },
+    {
+        "title": "③ MDT 协作",
+        "task": "给出参与学科、各自要回答的问题与可能分歧",
+        "question": "请写出：需要哪些学科参与、每个学科必须回答的关键问题、可能出现的分歧点。",
+        "rubric": "学科是否齐全且与病例相关；问题是否具体可回答；是否指出资料缺口与潜在分歧",
+    },
+]
+
+
 def display_case_analysis(selected_case):
-    """显示案例分析界面"""
+    """案例分析：病例资料 + 三类任务的先答后评。"""
     if not selected_case:
         st.info("请先在病例列表中选择一个教学病例")
         return
 
     st.header(f"📊 案例分析：{selected_case['title']}")
 
-    # 显示案例内容
     with st.expander("📖 病例详细信息", expanded=True):
         st.markdown(selected_case['content'])
 
-    # 分析工具
-    col1, col2, col3 = st.columns(3)
+    st.caption("先写自己的判断，再让 AI 按评分点点评——比直接看讲解更接近真实决策训练。")
 
-    with col1:
-        if st.button("🩺 诊断思路分析", use_container_width=True):
-            st.session_state["pending_prompt"] = f"请详细分析病例「{selected_case['title']}」的诊断思路，包括：病史特点、关键检查结果解读、鉴别诊断要点以及最终诊断依据。"
-            st.rerun()
+    tabs = st.tabs([item["title"] for item in CASE_TASKS])
+    for tab, item in zip(tabs, CASE_TASKS):
+        with tab:
+            st.markdown(f"**{item['question']}**")
+            answer = st.text_area(
+                "我的分析", key=f"mdt_case_ans_{item['title']}", height=160
+            )
+            col1, col2 = st.columns(2)
+            if col1.button(
+                "提交点评", key=f"mdt_case_submit_{item['title']}", use_container_width=True
+            ):
+                if _submit_for_review(item["task"], answer, item["rubric"], "案例分析"):
+                    rerun()
+            if col2.button(
+                "看参考讲解", key=f"mdt_case_ref_{item['title']}", use_container_width=True
+            ):
+                _ask_reference(item["task"], "案例分析")
+                rerun()
 
-    with col2:
-        if st.button("💊 治疗方案讨论", use_container_width=True):
-            st.session_state["pending_prompt"] = f"请针对病例「{selected_case['title']}」讨论多学科治疗方案，包括：各学科治疗选择、个体化考量因素、治疗优先级排序以及当前循证医学证据支持。"
-            st.rerun()
 
-    with col3:
-        if st.button("🤝 MDT协作要点", use_container_width=True):
-            st.session_state["pending_prompt"] = f"请分析病例「{selected_case['title']}」的MDT协作要点，包括：各参与学科的职责分工、关键决策节点、信息共享机制以及协作中的难点和注意事项。"
-            st.rerun()
+# ---------------------------------------------------------------------------
+# 虚拟仿真：有步骤的训练，逐步点评
+# ---------------------------------------------------------------------------
+SIM_SCENARIOS = {
+    "影像判读": [
+        {
+            "title": "选择检查",
+            "question": "本病例下一步最该做哪项影像检查？说明它能回答什么问题。",
+            "rubric": "检查选择是否与病例阶段匹配；是否说明该检查的目的与预期获得的信息",
+        },
+        {
+            "title": "描述征象",
+            "question": "写出你关注的关键影像征象：部位、大小、范围、有无侵犯或转移。",
+            "rubric": "描述是否结构化；是否覆盖分期所需的关键信息；是否遗漏重要征象",
+        },
+        {
+            "title": "影像诊断",
+            "question": "给出你的影像学诊断与分期判断。",
+            "rubric": "结论是否与征象自洽；分期判断是否正确",
+        },
+        {
+            "title": "下一步建议",
+            "question": "基于影像结论，写出下一步处理建议及理由。",
+            "rubric": "建议是否与分期匹配；是否说明依据与仍需补充的信息",
+        },
+    ],
+    "手术规划": [
+        {
+            "title": "术前评估",
+            "question": "写出术前必须评估的项目与你的结论（分期、体能、器官功能、合并症）。",
+            "rubric": "评估项是否完整；是否据此得出可手术/需新辅助等结论",
+        },
+        {
+            "title": "术式选择",
+            "question": "写出你选择的手术方式与入路，以及理由。",
+            "rubric": "术式是否与分期/肿瘤位置匹配；是否权衡功能保留与手术风险",
+        },
+        {
+            "title": "风险预判",
+            "question": "写出术中可能出现的风险与你准备的应对措施。",
+            "rubric": "风险是否覆盖出血、邻近器官损伤、淋巴清扫等；应对是否具体可执行",
+        },
+        {
+            "title": "备选方案",
+            "question": "如果术中发现无法按计划完成，你的备选方案是什么？",
+            "rubric": "备选方案是否现实；是否说明切换条件与术中决策依据",
+        },
+    ],
+    "术后并发症处理": [
+        {
+            "title": "识别问题",
+            "question": "术后第 3 天出现发热与腰痛，写出你的鉴别诊断与首选检查。",
+            "rubric": "鉴别诊断是否覆盖感染、尿漏、梗阻等；首选检查是否合理",
+        },
+        {
+            "title": "处理方案",
+            "question": "写出你的处理方案（抗感染、引流、支持治疗）与需要观察的指标。",
+            "rubric": "处理是否有层次、先救命后治病；观察指标是否具体；是否交代升级条件",
+        },
+        {
+            "title": "多学科协作",
+            "question": "这种情况需要哪些学科参与，各自负责什么？",
+            "rubric": "学科与职责是否匹配；是否包含上报、家属沟通与随访安排",
+        },
+    ],
+}
 
 
 def display_virtual_simulation():
-    """显示虚拟仿真界面"""
+    """虚拟仿真：选定场景后按步骤推进，每步先作答再点评。"""
     st.header("🔄 虚拟仿真训练")
 
-    selected_case = st.session_state.get("selected_case")
-    case_title = selected_case["title"] if selected_case else "当前选中案例"
+    if not st.session_state.get("selected_case"):
+        st.info("请先在病例列表中选择一个教学病例")
+        return
 
-    col1, col2 = st.columns(2)
+    scenario = st.selectbox("选择训练场景", list(SIM_SCENARIOS.keys()), key="mdt_sim_scenario")
+    steps = SIM_SCENARIOS[scenario]
+    step = min(st.session_state.get("mdt_sim_step", 0), len(steps) - 1)
+    st.session_state["mdt_sim_step"] = step
 
-    with col1:
-        st.subheader("🖼️ 影像诊断模拟")
-        st.caption("模拟阅片过程，训练影像学判断能力")
-        if st.button("开始影像诊断训练", use_container_width=True):
-            st.session_state.simulation_mode = "imaging"
-            st.session_state["pending_prompt"] = (
-                f"请模拟一个泌尿系统影像诊断训练场景（基于病例：{case_title}）。"
-                "以考官身份，先描述影像学表现（不要直接给出结论），引导我逐步分析关键征象，"
-                "提出问题让我判断影像学诊断，并在我回答后给出点评和指导。"
-            )
-            st.rerun()
+    st.progress(
+        (step + 1) / len(steps),
+        text=f"{scenario}：第 {step + 1} / {len(steps)} 步",
+    )
 
-    with col2:
-        st.subheader("🔪 手术规划模拟")
-        st.caption("模拟术前讨论，训练手术方案制定能力")
-        if st.button("开始手术规划训练", use_container_width=True):
-            st.session_state.simulation_mode = "surgery"
-            st.session_state["pending_prompt"] = (
-                f"请模拟一个手术规划讨论场景（基于病例：{case_title}）。"
-                "以主治医师身份，引导我完成：1）术前影像评估；2）手术入路选择；"
-                "3）术中风险预判；4）备选方案制定。逐步提问，根据我的回答给出专业反馈。"
-            )
-            st.rerun()
+    item = steps[step]
+    st.subheader(f"{item['title']}")
+    st.markdown(item["question"])
 
-    st.divider()
-    st.subheader("🏥 MDT会议模拟")
-    st.caption("模拟多学科会诊讨论，训练协作沟通能力")
-    col3, col4 = st.columns(2)
-    with col3:
-        if st.button("模拟MDT病例讨论", use_container_width=True):
+    answer = st.text_area("我的判断", key=f"mdt_sim_ans_{scenario}_{step}", height=140)
+
+    col1, col2, col3 = st.columns(3)
+    if col1.button(
+        "提交点评", key=f"mdt_sim_submit_{scenario}_{step}", use_container_width=True
+    ):
+        if _submit_for_review(f"{scenario} · {item['title']}", answer, item["rubric"], "虚拟仿真"):
+            records = st.session_state.setdefault("mdt_sim_records", {})
+            records[f"{scenario} / {item['title']}"] = answer.strip()
+            rerun()
+    if col2.button(
+        "下一步",
+        key=f"mdt_sim_next_{scenario}_{step}",
+        use_container_width=True,
+        disabled=step >= len(steps) - 1,
+    ):
+        st.session_state["mdt_sim_step"] = step + 1
+        rerun()
+    if col3.button("重新开始", key=f"mdt_sim_reset_{scenario}", use_container_width=True):
+        st.session_state["mdt_sim_step"] = 0
+        rerun()
+
+    records = st.session_state.get("mdt_sim_records") or {}
+    if records:
+        with st.expander(f"本次已完成的作答（{len(records)} 条）", expanded=False):
+            for k, v in records.items():
+                st.markdown(f"**{k}**")
+                st.caption(v[:200])
+
+    if step == len(steps) - 1 and records:
+        if st.button("生成训练复盘", key=f"mdt_sim_summary_{scenario}", use_container_width=True):
+            case = st.session_state.get("selected_case") or {}
+            detail = "\n\n".join(f"### {k}\n{v}" for k, v in records.items())
             st.session_state["pending_prompt"] = (
-                f"请模拟一次多学科会诊（MDT）讨论（病例：{case_title}）。"
-                "你扮演MDT会议主持人，依次让我代表泌尿外科、肿瘤内科、放疗科、病理科、影像科发言，"
-                "评价各学科意见的合理性，并引导团队形成最终诊疗共识。"
+                f"【虚拟仿真 · 训练复盘】\n当前病例：{case.get('title', '未选择')}"
+                f"\n场景：{scenario}\n\n我在各步骤的作答：\n{detail}\n\n"
+                "请生成本次训练复盘：1) 逐步指出我判断正确的关键点；"
+                "2) 汇总我反复出现的薄弱环节（按出现次数排序）；"
+                "3) 给出 3 条可立刻改进的要点，并注明依据的知识库文档与章节。"
             )
-            st.rerun()
-    with col4:
-        if st.button("模拟术后并发症处理", use_container_width=True):
-            st.session_state["pending_prompt"] = (
-                f"请模拟一个术后并发症处理场景（基于病例：{case_title}的治疗阶段）。"
-                "描述一种可能出现的术后并发症，提问我如何识别和处理，"
-                "根据我的回答给出临床指导意见，强调多学科协作处理要点。"
-            )
-            st.rerun()
+            rerun()
+
+
+# ---------------------------------------------------------------------------
+# 团队协作：三轮讨论，每轮先写发言再点评
+# ---------------------------------------------------------------------------
+TEAM_ROLES = ["泌尿外科医师", "肿瘤内科医师", "放疗科医师", "病理科医师", "影像科医师", "护理团队"]
+
+TEAM_ROUNDS = [
+    {
+        "title": "第1轮 · 专科意见",
+        "task": "以所选角色给出专科意见",
+        "question": "以你选择的角色，写出你对本病例的专科意见：诊断依据、治疗倾向、需要其他学科回答的问题。",
+        "rubric": "是否体现本专科视角；意见是否有病例/指南依据；是否提出明确的跨学科问题",
+    },
+    {
+        "title": "第2轮 · 处理分歧",
+        "task": "回应其他学科的不同意见并寻求共识",
+        "question": "其他学科与你的意见不一致。写出你如何论证自己的观点、如何找到共识。",
+        "rubric": "是否正面回应分歧；是否用证据而非立场说话；是否提出可验证的折中方案",
+    },
+    {
+        "title": "第3轮 · 形成结论",
+        "task": "作为牵头人形成 MDT 结论",
+        "question": "写出你作为本次讨论牵头人形成的 MDT 结论：诊断、首选方案、备选方案、执行分工、随访。",
+        "rubric": "结论是否完整可执行；是否包含分工与随访节点；是否吸收了其他学科的意见",
+    },
+]
 
 
 def display_team_collaboration():
-    """显示团队协作界面"""
-    st.header("👥 团队协作项目")
+    """团队协作：学生固定一个角色，分三轮推进，每轮先写发言再点评。"""
+    st.header("👥 团队协作")
 
-    selected_case = st.session_state.get("selected_case")
-    case_title = selected_case["title"] if selected_case else "当前选中案例"
+    if not st.session_state.get("selected_case"):
+        st.info("请先在病例列表中选择一个教学病例")
+        return
 
-    st.subheader("🗣️ 角色扮演协作")
-    st.caption("选择你在MDT团队中扮演的专科角色，与AI协作完成病例讨论")
+    role = st.selectbox("我扮演的角色", TEAM_ROLES, key="team_role")
+    st.caption("AI 扮演其他学科。每轮先写你的发言，再让 AI 从跨学科视角点评。")
 
-    role_options = ["泌尿外科医师", "肿瘤内科医师", "放疗科医师", "病理科医师", "影像科医师", "护理团队"]
-    selected_role = st.selectbox("选择你的角色", role_options, key="team_role")
+    round_idx = min(st.session_state.get("mdt_team_round", 0), len(TEAM_ROUNDS) - 1)
+    st.session_state["mdt_team_round"] = round_idx
+    item = TEAM_ROUNDS[round_idx]
 
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("开始角色扮演讨论", use_container_width=True):
-            st.session_state["pending_prompt"] = (
-                f"我将扮演{selected_role}参与病例「{case_title}」的MDT讨论。"
-                f"请你扮演其他学科的专家（包括与{selected_role}不同的学科），"
-                f"轮流向我提出需要{selected_role}解答的专科问题，并对我的回答给出跨学科视角的点评，"
-                "帮助我理解其他学科的关注点和协作要点。"
-            )
-            st.rerun()
-    with col2:
-        if st.button("多学科意见综合", use_container_width=True):
-            st.session_state["pending_prompt"] = (
-                f"针对病例「{case_title}」，请分别从泌尿外科、肿瘤内科、放疗科、病理科、影像科"
-                "五个专科角度，各自提出2-3个关键意见和关注点，"
-                "然后帮助分析各学科意见的异同，并给出综合的MDT诊疗建议。"
-            )
-            st.rerun()
+    st.progress(
+        (round_idx + 1) / len(TEAM_ROUNDS),
+        text=f"团队协作：第 {round_idx + 1} / {len(TEAM_ROUNDS)} 轮 · {item['title']}",
+    )
 
-    st.divider()
-    st.subheader("💡 协作技能训练")
-    col3, col4 = st.columns(2)
-    with col3:
-        if st.button("沟通技巧训练", use_container_width=True):
-            st.session_state["pending_prompt"] = (
-                f"请针对病例「{case_title}」设计一个医患沟通场景训练。"
-                "你扮演患者或家属，我来练习如何向非医疗背景的患者解释MDT诊疗方案，"
-                "评估我的沟通是否清晰、有同理心，并给出改进建议。"
-            )
-            st.rerun()
-    with col4:
-        if st.button("学科间分歧处理", use_container_width=True):
-            st.session_state["pending_prompt"] = (
-                f"请模拟病例「{case_title}」MDT讨论中出现学科意见分歧的场景。"
-                "设定两个学科对治疗方案有明显分歧，引导我分析分歧原因、寻找共同点，"
-                "练习如何在尊重各学科专业判断的基础上达成团队共识。"
-            )
-            st.rerun()
+    st.subheader(item["title"])
+    st.markdown(item["question"])
+
+    answer = st.text_area(
+        f"我作为{role}的发言", key=f"mdt_team_ans_{round_idx}", height=150
+    )
+
+    col1, col2, col3 = st.columns(3)
+    if col1.button("提交点评", key=f"mdt_team_submit_{round_idx}", use_container_width=True):
+        if _submit_for_review(
+            f"{item['task']}（我的角色：{role}）", answer, item["rubric"], "团队协作"
+        ):
+            rerun()
+    if col2.button(
+        "让其他学科先发言",
+        key=f"mdt_team_others_{round_idx}",
+        use_container_width=True,
+    ):
+        case = st.session_state.get("selected_case") or {}
+        st.session_state["pending_prompt"] = (
+            f"【团队协作 · 其他学科发言】当前病例：{case.get('title', '未选择')}"
+            f"\n我是{role}，当前处于「{item['title']}」。\n"
+            "请分别以其他 4 个学科（与我的角色不同）的身份各发表 2-3 句意见，"
+            "体现出学科差异与可能的分歧，最后向我提出 2 个必须由我回答的问题。"
+        )
+        rerun()
+    if col3.button(
+        "进入下一轮",
+        key=f"mdt_team_next_{round_idx}",
+        use_container_width=True,
+        disabled=round_idx >= len(TEAM_ROUNDS) - 1,
+    ):
+        st.session_state["mdt_team_round"] = round_idx + 1
+        rerun()
+
+    if st.button("汇总我的协作表现", key="mdt_team_summary", use_container_width=True):
+        case = st.session_state.get("selected_case") or {}
+        st.session_state["pending_prompt"] = (
+            f"【团队协作 · 表现汇总】当前病例：{case.get('title', '未选择')}"
+            f"\n我的角色：{role}\n\n请从跨学科协作角度评价我的表现："
+            "1) 是否站在本专科立场给出了有依据的意见；"
+            "2) 是否回应了其他学科的关注点；"
+            "3) 形成的结论是否可执行；"
+            "4) 给出 2 条最该改进的协作习惯，并注明依据的知识库文档与章节。"
+        )
+        rerun()
+
+
+# ---------------------------------------------------------------------------
+# 考核评估：四维答题，由模型按权重评分
+# ---------------------------------------------------------------------------
+ASSESSMENT_QUESTIONS = [
+    {
+        "dim": "诊断准确性",
+        "question": "写出本病例的诊断、分期/风险分层，以及每条判断依据来自哪项资料。",
+    },
+    {
+        "dim": "治疗方案合理性",
+        "question": "写出首选治疗方案、备选方案、选择理由，以及切换方案的条件。",
+    },
+    {
+        "dim": "多学科协作",
+        "question": "写出需要参与的学科、每个学科要回答的关键问题，以及可能的分歧点。",
+    },
+    {
+        "dim": "沟通表达能力",
+        "question": "用患者和家属能听懂的语言，说明本病例的诊疗计划与主要风险（150 字以内）。",
+    },
+]
 
 
 def display_assessment_evaluation():
-    """显示考核评估界面"""
+    """考核评估：四道题对应四个维度，提交后由模型按权重评分并给依据。"""
     st.header("📝 学习成果评估")
-    
-    if not st.session_state.get("selected_case"):
-        st.info("请先选择一个教学案例进行考核评估")
+
+    selected_case = st.session_state.get("selected_case")
+    if not selected_case:
+        st.info("请先在病例列表中选择一个教学病例")
         return
-    
-    selected_case = st.session_state.selected_case
-    
-    # 显示案例信息
-    with st.expander("📋 考核案例信息", expanded=True):
-        st.markdown(f"**案例标题**: {selected_case['title']}")
-        st.markdown(f"**案例难度**: {selected_case['difficulty']}")
-        st.markdown(f"**案例描述**: {selected_case['description']}")
-    
-    # 考核评分表
-    st.subheader("📊 考核评分")
-    
-    assessment_scores = st.session_state.get("assessment_scores", {})
-    
-    for criterion, details in ASSESSMENT_CRITERIA.items():
-        col1, col2 = st.columns([2, 3])
-        with col1:
-            st.markdown(f"**{criterion}** (权重: {details['权重']})")
-        with col2:
-            score = st.select_slider(
-                f"{criterion}评分",
-                options=details["评分标准"],
-                value=assessment_scores.get(criterion, details["评分标准"][1]),
-                key=f"assessment_{criterion}"
+
+    with st.expander("📋 考核病例信息", expanded=False):
+        st.markdown(f"**{selected_case['title']}**（难度：{selected_case.get('difficulty', '未标注')}）")
+        st.caption(selected_case.get("description", ""))
+
+    st.caption("四道题对应四个考核维度，提交后由模型按权重评分并给出依据；不做自评打分。")
+
+    answers = {}
+    tabs = st.tabs([item["dim"] for item in ASSESSMENT_QUESTIONS])
+    for tab, item in zip(tabs, ASSESSMENT_QUESTIONS):
+        with tab:
+            st.markdown(f"**{item['question']}**")
+            answers[item["dim"]] = st.text_area(
+                "我的作答", key=f"mdt_assess_{item['dim']}", height=150
             )
-            assessment_scores[criterion] = score
-    
-    st.session_state.assessment_scores = assessment_scores
-    
-    # 计算总分
-    if st.button("📈 计算总分并获取AI反馈", use_container_width=True):
-        total_score = 0
-        score_details = []
-        for criterion, details in ASSESSMENT_CRITERIA.items():
-            score_index = details["评分标准"].index(assessment_scores[criterion])
-            normalized_score = (len(details["评分标准"]) - score_index - 1) / (len(details["评分标准"]) - 1)
-            weighted_score = normalized_score * details["权重"] * 100
-            total_score += weighted_score
-            score_details.append(f"- {criterion}：{assessment_scores[criterion]}（权重{details['权重']}）")
 
-        st.success(f"**总分: {total_score:.1f}/100**")
+    if st.button("提交答卷，生成评分", type="primary", key="mdt_assess_submit"):
+        empty = [d for d, a in answers.items() if not (a or "").strip()]
+        if empty:
+            st.warning("还有未作答的维度：" + "、".join(empty))
+        else:
+            case_title = selected_case["title"]
+            weights = "、".join(
+                f"{name} {cfg['权重']}" for name, cfg in ASSESSMENT_CRITERIA.items()
+            )
+            detail = "\n\n".join(
+                f"### {item['dim']}\n{answers[item['dim']].strip()}"
+                for item in ASSESSMENT_QUESTIONS
+            )
+            st.session_state["pending_prompt"] = (
+                f"【考核评估 · 按维度评分】\n当前病例：{case_title}\n\n"
+                f"我的答卷：\n{detail}\n\n"
+                f"请按下列维度和权重评分（权重：{weights}）：\n"
+                "1. 输出评分表：维度 | 权重 | 得分(0-100) | 判分依据（引用我的原文，并对照病例与知识库）；\n"
+                "2. 给出加权总分（0-100）；\n"
+                "3. 逐维度指出主要问题与改进方向；\n"
+                "4. 给出下一步学习重点。\n"
+                "评分必须有依据，不要用「很好/不错」这类空泛评价；"
+                "证据要注明依据的知识库文档与章节。"
+            )
+            rerun()
 
-        score_summary = "\n".join(score_details)
-        st.session_state["pending_prompt"] = (
-            f"请对以下考核结果提供详细的专业反馈：\n\n"
-            f"考核案例：{selected_case['title']}（难度：{selected_case['difficulty']}）\n"
-            f"总分：{total_score:.1f}/100\n\n"
-            f"各维度评分：\n{score_summary}\n\n"
-            "请从以下角度给出建设性反馈：\n"
-            "1. 各维度表现分析（优势与不足）\n"
-            "2. 针对薄弱环节的具体改进建议\n"
-            "3. 个性化的下一步学习计划\n"
-            "4. 推荐的相关学习资源或训练方向"
+    st.divider()
+    col1, col2 = st.columns(2)
+    if col1.button("生成完整考核报告", key="mdt_assess_report", use_container_width=True):
+        now = datetime.now().strftime("%Y-%m-%d %H:%M")
+        detail = "\n\n".join(
+            f"### {item['dim']}\n{(answers.get(item['dim']) or '（未作答）').strip()}"
+            for item in ASSESSMENT_QUESTIONS
         )
-        st.rerun()
-    
-    # 讨论记录
-    st.subheader("💬 讨论记录")
-    
-    discussion_records = st.session_state.get("discussion_records", [])
-    
-    for i, record in enumerate(discussion_records):
-        with st.expander(f"讨论记录 {i+1}: {record.get('topic', '未命名')}"):
-            st.markdown(f"**时间**: {record.get('time', '未知')}")
-            st.markdown(f"**主题**: {record.get('topic', '未指定')}")
-            st.markdown(f"**内容**: {record.get('content', '无内容')}")
-    
-    # 添加新讨论记录
-    with st.form("new_discussion"):
-        topic = st.text_input("讨论主题")
-        content = st.text_area("讨论内容")
-        
-        if st.form_submit_button("📝 添加讨论记录"):
-            new_record = {
-                "time": datetime.now().strftime("%Y-%m-%d %H:%M"),
-                "topic": topic,
-                "content": content
-            }
-            discussion_records.append(new_record)
-            st.session_state.discussion_records = discussion_records
-            st.rerun()
-    
-    # 导出考核报告
-    if st.button("📄 生成考核报告", use_container_width=True):
-        score_details = "\n".join([
-            f"- **{criterion}**: {assessment_scores.get(criterion, ASSESSMENT_CRITERIA[criterion]['评分标准'][1])} (权重: {ASSESSMENT_CRITERIA[criterion]['权重']})"
-            for criterion in ASSESSMENT_CRITERIA
-        ])
         st.session_state["pending_prompt"] = (
-            f"请帮我生成一份完整的MDT教学考核评估报告，格式规范，内容专业。\n\n"
-            f"基本信息：\n"
-            f"- 考核时间：{datetime.now().strftime('%Y-%m-%d %H:%M')}\n"
-            f"- 考核案例：{selected_case['title']}\n"
-            f"- 案例难度：{selected_case['difficulty']}\n\n"
-            f"考核评分结果：\n{score_details}\n\n"
-            "报告应包含：考核概述、各维度详细评价、综合评分分析、专业发展建议（短期/中期/长期目标）、"
-            "以及对该学员MDT能力培养的总体意见。报告最后注明由AI教学系统生成。"
+            f"请生成一份完整的 MDT 教学考核评估报告，格式规范、内容专业。\n\n"
+            f"考核时间：{now}\n考核病例：{selected_case['title']}"
+            f"（难度：{selected_case.get('difficulty', '未标注')}）\n\n"
+            f"我的答卷：\n{detail}\n\n"
+            "报告应包含：考核概述、各维度详细评价（引用我的原文作为证据）、综合评分分析、"
+            "专业发展建议（短期/中期/长期目标），并注明依据的知识库文档与章节。"
         )
-        st.rerun()
+        rerun()
+    if col2.button("查看评分维度说明", key="mdt_assess_criteria", use_container_width=True):
+        st.session_state["pending_prompt"] = (
+            "请说明 MDT 教学考核四个维度（诊断准确性 0.3、治疗方案合理性 0.4、"
+            "多学科协作 0.2、沟通表达能力 0.1）各自考察什么、评分时看哪些证据，"
+            "并给出每个维度「优秀/合格/待改进」的行为描述。"
+        )
+        rerun()
 
 
 def mdt_teaching_page(api: ApiRequest, is_lite: bool = False):
