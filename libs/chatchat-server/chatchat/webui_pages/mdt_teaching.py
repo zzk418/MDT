@@ -3,10 +3,11 @@ import hashlib
 import io
 import json
 import os
+import re
 import uuid
 from datetime import datetime
 from PIL import Image as PILImage
-from typing import Dict, List
+from typing import Dict, List, Optional
 from urllib.parse import urlencode
 
 import httpx
@@ -22,6 +23,7 @@ from chatchat.server.knowledge_base.model.kb_document_model import DocumentWithV
 from chatchat.server.knowledge_base.utils import format_reference
 from chatchat.server.utils import MsgType, get_config_models, get_config_platforms, get_default_llm, api_address
 from chatchat.webui_pages.mdt_kb_lookup import select_context, sources_markdown
+from chatchat.webui_pages import mdt_cases
 from chatchat.webui_pages.utils import *
 
 
@@ -778,22 +780,144 @@ def clear_conv(name: str = None):
 TEACHING_MODES = ["案例分析", "虚拟仿真", "团队协作", "考核评估"]
 
 
-def render_case_picker() -> None:
-    """进门先选病例：按病种分页的病例卡片墙。
+def get_case_studies() -> Dict[str, List[Dict]]:
+    """病例优先来自 _cases 目录（改文件即生效，不用重启）；目录为空时回退内置数据。"""
+    return mdt_cases.load_cases() or MDT_CASE_STUDIES
 
-    之前默认直接落在「案例分析 + 前列腺癌 + 列表第一个病例」，每次进门都一样，
-    看着像玩具。这里改成先让学生挑病例，选完再进入四步学习路径。
-    """
-    total = sum(len(v) for v in MDT_CASE_STUDIES.values())
+
+def render_case_images(case: Dict) -> None:
+    """渲染病例的示教影像；文件不存在就跳过，不影响页面。"""
+    images = case.get("images") or []
+    if not images:
+        return
+    cols = st.columns(min(len(images), 2))
+    shown = 0
+    for i, item in enumerate(images):
+        path = mdt_cases.image_abs_path(item.get("path", ""))
+        if not path or not path.is_file():
+            continue
+        with cols[shown % 2]:
+            st.image(
+                str(path),
+                caption=item.get("caption") or path.name,
+                use_column_width=True,
+            )
+        shown += 1
+    if shown:
+        st.caption("示例影像来自 Wikimedia Commons（PD / CC0 / CC BY），出处见 `_cases/ATTRIBUTION.md`。")
+
+
+def _find_case(case_id: str) -> Dict:
+    for cases in get_case_studies().values():
+        for case in cases:
+            if case.get("id") == case_id:
+                return case
+    return {}
+
+
+def _fill_case_editor(case: Optional[Dict]) -> None:
+    """把病例内容灌进编辑器 widget 的 session_state（Streamlit 里 value= 不覆盖已有状态）。"""
+    case = case or {}
+    st.session_state["mdt_case_id"] = case.get("id", "")
+    st.session_state["mdt_case_title"] = case.get("title", "")
+    st.session_state["mdt_case_disease"] = case.get("disease", "")
+    st.session_state["mdt_case_difficulty"] = case.get("difficulty", "中级")
+    st.session_state["mdt_case_tags"] = "，".join(case.get("tags") or [])
+    st.session_state["mdt_case_desc"] = case.get("description", "")
+    st.session_state["mdt_case_body"] = case.get("content", "")
+    st.session_state["mdt_editing_case"] = case.get("id", "")
+
+
+def render_case_editor() -> None:
+    """病例编辑器：新增/修改病例与影像，保存后写文件并同步到私有 git 仓库。"""
+    editing_id = st.session_state.get("mdt_editing_case") or ""
+    base = _find_case(editing_id) if editing_id else {}
+    if editing_id:
+        st.info(f"正在编辑：{editing_id}")
+
+    with st.form("mdt_case_form", clear_on_submit=False):
+        col1, col2, col3 = st.columns([2, 3, 1])
+        col1.text_input("病例 ID（留空自动生成）", key="mdt_case_id")
+        col2.text_input("标题", key="mdt_case_title")
+        col3.selectbox("难度", ["初级", "中级", "高级"], key="mdt_case_difficulty")
+        col4, col5 = st.columns(2)
+        col4.text_input("病种", key="mdt_case_disease", help="填已有的归入该病种；填新的会新建分页")
+        col5.text_input("标签（逗号分隔）", key="mdt_case_tags")
+        st.text_area("一句话摘要", key="mdt_case_desc", height=70)
+        st.text_area("病例正文（Markdown）", key="mdt_case_body", height=300)
+        uploads = st.file_uploader(
+            "添加影像（jpg / png / webp，可多选）",
+            type=["jpg", "jpeg", "png", "webp"],
+            accept_multiple_files=True,
+        )
+
+        existing = base.get("images") or []
+        keep: List[Dict] = []
+        if existing:
+            st.markdown("已有影像（取消勾选即从病例移除，文件仍留在 `_cases/images/`）")
+            for i, img in enumerate(existing):
+                label = img.get("caption") or img.get("path", "")
+                if st.checkbox(label, value=True, key=f"mdt_keep_img_{i}"):
+                    keep.append(img)
+
+        submitted = st.form_submit_button("保存病例", type="primary")
+        remove = st.form_submit_button("删除该病例")
+
+    if submitted:
+        title = (st.session_state.get("mdt_case_title") or "").strip()
+        body = (st.session_state.get("mdt_case_body") or "").strip()
+        if not title or not body:
+            st.error("标题和病例正文不能为空")
+            return
+        case = {
+            "id": (st.session_state.get("mdt_case_id") or "").strip(),
+            "title": title,
+            "disease": (st.session_state.get("mdt_case_disease") or "").strip() or "未分类",
+            "difficulty": st.session_state.get("mdt_case_difficulty") or "中级",
+            "tags": [
+                t.strip()
+                for t in re.split(r"[,，]", st.session_state.get("mdt_case_tags") or "")
+                if t.strip()
+            ],
+            "description": (st.session_state.get("mdt_case_desc") or "").strip(),
+            "content": body,
+            "images": keep,
+        }
+        saved = mdt_cases.save_case(case)
+        new_images = mdt_cases.save_uploaded_images(saved.stem, list(uploads or []))
+        if new_images:
+            case["id"] = saved.stem
+            case["images"] = keep + new_images
+            saved = mdt_cases.save_case(case)
+        ok, msg = mdt_cases.sync_to_cloud()
+        st.success(f"已保存 `{saved.name}`；{msg}")
+        _fill_case_editor(None)
+        st.rerun()
+
+    if remove:
+        if not editing_id:
+            st.warning("先在病例卡片上点「编辑」，再回来删除")
+        else:
+            mdt_cases.delete_case(editing_id)
+            ok, msg = mdt_cases.sync_to_cloud()
+            st.success(f"已删除 {editing_id}；{msg}")
+            _fill_case_editor(None)
+            st.rerun()
+
+
+def render_case_picker() -> None:
+    """进门先选病例：按病种分页的病例卡片墙，外加新增/编辑入口。"""
+    studies = get_case_studies()
+    total = sum(len(v) for v in studies.values())
     st.subheader("选择教学病例")
     st.caption(
-        f"共 {total} 个病例 · {len(MDT_CASE_STUDIES)} 个病种。"
-        "选完进入学习路径：案例分析 → 虚拟仿真 → 团队协作 → 考核评估。"
+        f"共 {total} 个病例 · {len(studies)} 个病种。病例是 Markdown 文件"
+        "（`data/knowledge_base/_cases/`），改文件或在这里新增都立即生效，并同步到私有仓库。"
         "不选病例也可以直接在下方提问。"
     )
 
-    tabs = st.tabs(list(MDT_CASE_STUDIES.keys()))
-    for tab, (disease, cases) in zip(tabs, MDT_CASE_STUDIES.items()):
+    tabs = st.tabs(list(studies.keys()) + ["＋ 新增 / 编辑病例"])
+    for tab, (disease, cases) in zip(tabs, studies.items()):
         with tab:
             cols = st.columns(2)
             for i, case in enumerate(cases):
@@ -803,16 +927,40 @@ def render_case_picker() -> None:
                     tags = case.get("tags") or []
                     if tags:
                         st.caption("标签：" + "、".join(tags))
+                    if case.get("images"):
+                        st.caption(f"影像：{len(case['images'])} 张")
                     st.write(case.get("description", ""))
-                    if st.button(
-                        "开始学习",
-                        key=f"mdt_pick_{case.get('id', i)}",
-                        use_container_width=True,
+
+                    col_a, col_b, col_c = st.columns([2, 1, 1])
+                    if col_a.button(
+                        "开始学习", key=f"mdt_pick_{case['id']}", use_container_width=True
                     ):
                         st.session_state["selected_case"] = case
                         st.session_state["selected_disease"] = disease
                         st.session_state["selected_case_title"] = case["title"]
                         st.rerun()
+                    if col_b.button(
+                        "编辑", key=f"mdt_edit_{case['id']}", use_container_width=True
+                    ):
+                        _fill_case_editor(case)
+                        st.rerun()
+                    armed = st.session_state.get("mdt_del_arm") == case["id"]
+                    if col_c.button(
+                        "确认删除" if armed else "删除",
+                        key=f"mdt_del_{case['id']}",
+                        use_container_width=True,
+                    ):
+                        if not armed:
+                            st.session_state["mdt_del_arm"] = case["id"]
+                            st.rerun()
+                        else:
+                            mdt_cases.delete_case(case["id"])
+                            _, msg = mdt_cases.sync_to_cloud()
+                            st.session_state["mdt_del_arm"] = ""
+                            st.toast(f"已删除 {case['id']}；{msg}")
+                            st.rerun()
+    with tabs[-1]:
+        render_case_editor()
 
 
 def render_case_header(selected_case: dict, teaching_mode: str) -> None:
@@ -1023,6 +1171,10 @@ def display_case_analysis(selected_case):
     with st.expander("📖 病例详细信息", expanded=True):
         st.markdown(selected_case['content'])
 
+    if selected_case.get("images"):
+        with st.expander("🖼️ 影像资料", expanded=True):
+            render_case_images(selected_case)
+
     st.caption("先写自己的判断，再让 AI 按评分点点评——比直接看讲解更接近真实决策训练。")
 
     tabs = st.tabs([item["title"] for item in CASE_TASKS])
@@ -1120,6 +1272,11 @@ def display_virtual_simulation():
     if not st.session_state.get("selected_case"):
         st.info("请先在病例列表中选择一个教学病例")
         return
+
+    current_case = st.session_state.get("selected_case") or {}
+    if current_case.get("images"):
+        with st.expander("🖼️ 影像资料（作答前先看）", expanded=True):
+            render_case_images(current_case)
 
     scenario = st.selectbox("选择训练场景", list(SIM_SCENARIOS.keys()), key="mdt_sim_scenario")
     steps = SIM_SCENARIOS[scenario]
@@ -1503,7 +1660,6 @@ def mdt_teaching_page(api: ApiRequest, is_lite: bool = False):
 
         with st.expander("📚 知识库与检索", expanded=False):
             # 知识库关联（API 不可用时退化为仅"不使用知识库", 避免 NoneType 崩溃）
-            st.subheader("📚 知识库关联")
             kb_list = ["不使用知识库"] + [x["kb_name"] for x in (api.list_knowledge_bases() or [])]
             default_kb = Settings.kb_settings.DEFAULT_KNOWLEDGE_BASE
             if default_kb not in kb_list:
@@ -1534,7 +1690,6 @@ def mdt_teaching_page(api: ApiRequest, is_lite: bool = False):
 
         with st.expander("🤖 模型配置", expanded=False):
             # 模型配置（内联展示，直接可切换）
-            st.subheader("🤖 模型配置")
             all_platforms = list(get_config_platforms())
             # 默认平台跟随默认模型: 默认模型属于哪个平台就选哪个平台, 都没有再退回 cloud-api。
             # 之前这里写死 cloud-api, 导致 MTD_DEFAULT_LLM_MODEL=deepseek-chat 时平台仍是

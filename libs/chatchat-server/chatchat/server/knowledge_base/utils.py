@@ -54,6 +54,8 @@ def list_kbs_from_folder():
         f
         for f in os.listdir(Settings.basic_settings.KB_ROOT_PATH)
         if os.path.isdir(os.path.join(Settings.basic_settings.KB_ROOT_PATH, f))
+        # 下划线开头的是内部目录（如病例库 _cases），不算知识库
+        and not f.startswith("_")
     ]
 
 

@@ -150,17 +150,18 @@ def _load_config() -> dict:
     }
 
 
-def backup_files(kb_name: str, filenames: List[str]) -> Tuple[bool, str]:
-    """把指定知识库完整镜像到私有 git 仓库并 push。
+def mirror_directory(local_dir, repo_subdir: str, label: str) -> Tuple[bool, str]:
+    """把 local_dir 下的全部文件镜像到私有 git 仓库的 repo_subdir（增/改/删都同步）。
 
-    filenames 仅保留兼容旧调用方；每次执行都会重新扫描知识库 content 目录，
-    因此新增、修改和删除都会同步到云端。
+    知识库（content 目录）和病例库（_cases 目录）共用这一个实现：
+    以本地目录为准，云端多出来的文件会被删除，git 历史仍可回溯。
     """
     if not backup_enabled():
         return True, "云端备份未启用"
 
-    from chatchat.settings import Settings  # 延迟导入,避免模块加载时的循环依赖
-    from chatchat.server.knowledge_base.utils import get_file_path, list_files_from_folder
+    local_dir = Path(local_dir)
+    if not local_dir.is_dir():
+        return True, f"{label}: 目录不存在，跳过"
 
     cfg = _load_config()
     if not cfg["remote_url"]:
@@ -176,51 +177,47 @@ def backup_files(kb_name: str, filenames: List[str]) -> Tuple[bool, str]:
             cfg["author_email"],
         )
     except BackupError as e:
-        logger.error(f"知识库备份初始化失败: {e}")
+        logger.error(f"{label} 备份初始化失败: {e}")
         return False, str(e)
 
-    kb_root = Path(Settings.basic_settings.KB_ROOT_PATH)
-    current_files = list_files_from_folder(kb_name)
-    kb_repo_root = cfg["repo_path"] / kb_name
+    files = [p for p in sorted(local_dir.rglob("*")) if p.is_file()]
+    repo_root = cfg["repo_path"] / repo_subdir
 
-    # 以本地 content 目录为准，复制全部当前文件。
-    for name in current_files:
-        src = Path(get_file_path(kb_name, name))
-        if not src.is_file():
+    for src in files:
+        rel = src.relative_to(local_dir)
+        if rel.parts and rel.parts[0] == ".git":
             continue
-        dst = kb_repo_root / Path(name)
+        dst = repo_root / rel
         dst.parent.mkdir(parents=True, exist_ok=True)
         try:
             shutil.copy2(src, dst)
         except OSError as e:
-            logger.error(f"复制备份文件失败 {name}: {e}")
-            return False, f"复制备份文件失败: {name}"
+            logger.error(f"复制备份文件失败 {rel}: {e}")
+            return False, f"复制备份文件失败: {rel}"
 
-    # 删除云端镜像中本地已经不存在的文件。
-    current_set = {Path(name).as_posix() for name in current_files}
-    if kb_repo_root.is_dir():
-        for path in sorted(kb_repo_root.rglob("*"), reverse=True):
-            if path.is_file() and path.relative_to(kb_repo_root).as_posix() not in current_set:
-                path.unlink()
+    # 删除云端镜像里本地已不存在的文件
+    if repo_root.is_dir():
+        for path in sorted(repo_root.rglob("*"), reverse=True):
+            if path.is_file():
+                if not (local_dir / path.relative_to(repo_root)).is_file():
+                    path.unlink()
             elif path.is_dir():
                 try:
                     path.rmdir()
                 except OSError:
                     pass
 
-    rel_kb = kb_repo_root.relative_to(cfg["repo_path"]).as_posix()
-    r = _run_git(["add", "-A", "--", rel_kb], cwd=cfg["repo_path"])
+    r = _run_git(["add", "-A", "--", repo_subdir], cwd=cfg["repo_path"])
     if r.returncode != 0:
         return False, f"git add 失败: {_redact(r.stderr, token)}"
 
-    # 同名同内容时不产生空 commit。
     r = _run_git(["diff", "--cached", "--quiet"], cwd=cfg["repo_path"])
     if r.returncode == 0:
-        return True, f"云端已是最新({len(current_files)} 个文件)"
+        return True, f"{label}: 云端已是最新（{len(files)} 个文件）"
     if r.returncode != 1:
         return False, f"git diff 失败: {_redact(r.stderr, token)}"
 
-    msg = f"sync {kb_name}: {len(current_files)} file(s)"
+    msg = f"sync {label}: {len(files)} file(s)"
     r = _run_git(["commit", "-m", msg], cwd=cfg["repo_path"])
     if r.returncode != 0:
         return False, f"git commit 失败: {_redact(r.stderr, token)}"
@@ -234,4 +231,15 @@ def backup_files(kb_name: str, filenames: List[str]) -> Tuple[bool, str]:
     if r.returncode != 0:
         return False, f"git push 失败: {_redact(r.stderr, token)}"
 
-    return True, f"已完整同步 {len(current_files)} 个文件到云端"
+    return True, f"{label}: 已同步 {len(files)} 个文件到云端"
+
+
+def backup_files(kb_name: str, filenames: List[str]) -> Tuple[bool, str]:
+    """把指定知识库的 content 目录完整镜像到私有 git 仓库。
+
+    filenames 仅保留兼容旧调用方；每次执行都会重新扫描目录，因此新增、
+    修改和删除都会同步到云端。实际逻辑见 mirror_directory()。
+    """
+    from chatchat.server.knowledge_base.utils import get_doc_path
+
+    return mirror_directory(get_doc_path(kb_name), kb_name, kb_name)
